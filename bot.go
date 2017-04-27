@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"strings"
 	"regexp"
-	"math/rand"
 	"time"
 	"encoding/binary"
 	"flag"
@@ -23,6 +22,7 @@ import (
 var (
 	selfId string
 	token  string
+	voiceQueue = make(chan voicePayload)
 )
 
 var conditions []condition = []condition{
@@ -77,7 +77,13 @@ type voiceAction struct {
 	buffer [][]byte
 }
 
-// say something to the text channel of the original context
+type voicePayload struct {
+	buffer [][]byte
+	channelId string
+	guildId string
+}
+
+// type something to the text channel of the original context
 func (ta *textAction) perform(ctx context) error {
 	var err error
 	if ta.tts {
@@ -89,41 +95,49 @@ func (ta *textAction) perform(ctx context) error {
 }
 
 // say something to the voice channel of the user in the original context
-func (va *voiceAction) perform(ctx context) error {
-	var err error
-
+func (va *voiceAction) perform(ctx context) error{
 	vcId := getVoiceChannelIdByContext(ctx)
 	if vcId == "" {
 		ctx.session.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
 		return nil
 	}
-
-	vc, err := ctx.session.ChannelVoiceJoin(ctx.guild.ID, vcId, false, true)
-	if err != nil {
-		return err
+	voiceQueue <- voicePayload{
+		buffer: va.buffer,
+		channelId: vcId,
+		guildId: ctx.guild.ID,
 	}
-	defer vc.Disconnect()
+	return nil
+}
 
-	_ = vc.Speaking(true)
-	defer vc.Speaking(false)
+func transmitVoice(s *discordgo.Session) {
+	for vp := range voiceQueue {
+		// anonymous immediate to use defer since transmit voice is an infinite loop
+		err := func(vp voicePayload) error {
+			vc, err := s.ChannelVoiceJoin(vp.guildId, vp.channelId, false, true)
+			if err != nil {
+				return err
+			}
+			defer vc.Disconnect()
 
-	// wait := -300 + rand.Intn(1000)
-	// fmt.Printf("Randomly decided to wait %v ms\n", wait)
-	// time.Sleep(time.Duration(wait) * time.Millisecond)
-	
-	_ = rand.Intn(10)
-	time.Sleep (100* time.Millisecond)
+			_ = vc.Speaking(true)
+			defer vc.Speaking(false)
 
-	for _, sample := range va.buffer {
-		vc.OpusSend <- sample
+			time.Sleep (100 * time.Millisecond)
+			for _, sample := range vp.buffer {
+				vc.OpusSend <- sample
+			}
+			time.Sleep(100 * time.Millisecond)
+
+			return err
+		}(vp)
+		if (err != nil) {
+			fmt.Printf("Error transmit voice: %v\n", err)
+		}
 	}
-
-	time.Sleep(100 * time.Millisecond)
-
-	return err
 }
 
 func getVoiceChannelIdByContext(ctx context) (string) {
+	// fmt.Printf("# voice states %v\n", len(ctx.guild.VoiceStates))
 	for _, vs := range ctx.guild.VoiceStates {
 		if vs.UserID == ctx.author.ID {
 			return vs.ChannelID
@@ -280,12 +294,7 @@ func main() {
 
 	selfId = botUser.ID
 
-	/*newUser, err := discord.UserUpdate("", "", "aoebot", "", "")
-	if err != nil {
-		fmt.Print("Error change my name: %v\n", err)
-		return
-	}
-	fmt.Printf("Got new name %v\n", newUser)*/
+	go transmitVoice(discord)
 
 	// listen to discord websocket for events
 	err = discord.Open()
