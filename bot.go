@@ -14,7 +14,6 @@ import (
 	"regexp"
 	"math/rand"
 	"time"
-	// "exec"
 	"encoding/binary"
 	"flag"
 	"github.com/bwmarrin/discordgo"
@@ -28,35 +27,44 @@ var (
 
 var conditions []condition = []condition{
 	{
-		trigger: "?mayo",
+		trigger: func(ctx context) bool {
+			return strings.ToLower(ctx.message) == "?mayo"
+		},
 		response: &textAction{
 			content: "Is mayonnaise an instrument?",
 			tts:     true,
 		},
 	},
-	/*{
-		trigger: "30",
-		response: &voiceAction{
-			file: "media/audio/30 wololo.dca",
+	{
+		trigger: func(ctx context) bool {
+			return strings.ToLower(ctx.message) == "aoebot"
 		},
-	},*/
+		response: &textAction{
+			content: ":robot:",
+			tts:     true,
+		},
+	},
 }
 
 // associate a response to trigger
 type condition struct {
-	trigger  string
+	// TODO isTriggeredBy better name?
+	trigger  func(ctx context) bool
 	response action
 }
 
 // perform an action given the context (environment) of its trigger
 type action interface {
-	perform(s *discordgo.Session, ctx context) error
+	perform(ctx context) error
 }
 
+// type context interface{}
 type context struct {
+	session *discordgo.Session
 	guild   *discordgo.Guild
 	channel *discordgo.Channel
 	author  *discordgo.User
+	message string
 }
 
 type textAction struct {
@@ -64,24 +72,24 @@ type textAction struct {
 	tts     bool
 }
 
-// say something to the text channel of the original context
-func (ta *textAction) perform(s *discordgo.Session, ctx context) error {
-	var err error
-	if ta.tts {
-		_, err = s.ChannelMessageSendTTS(ctx.channel.ID, ta.content)
-	} else {
-		_, err = s.ChannelMessageSend(ctx.channel.ID, ta.content)
-	}
-	return err
-}
-
 type voiceAction struct {
 	file   string
 	buffer [][]byte
 }
 
+// say something to the text channel of the original context
+func (ta *textAction) perform(ctx context) error {
+	var err error
+	if ta.tts {
+		_, err = ctx.session.ChannelMessageSendTTS(ctx.channel.ID, ta.content)
+	} else {
+		_, err = ctx.session.ChannelMessageSend(ctx.channel.ID, ta.content)
+	}
+	return err
+}
+
 // say something to the voice channel of the user in the original context
-func (va *voiceAction) perform(s *discordgo.Session, ctx context) error {
+func (va *voiceAction) perform(ctx context) error {
 	var err error
 
 	err = va.load()
@@ -89,13 +97,13 @@ func (va *voiceAction) perform(s *discordgo.Session, ctx context) error {
 		return err
 	}
 
-	vcId := getVoiceChannelIdByContext(s, ctx)
+	vcId := getVoiceChannelIdByContext(ctx)
 	if vcId == "" {
-		s.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
+		ctx.session.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
 		return nil
 	}
 
-	vc, err := s.ChannelVoiceJoin(ctx.guild.ID, vcId, false, true)
+	vc, err := ctx.session.ChannelVoiceJoin(ctx.guild.ID, vcId, false, true)
 	if err != nil {
 		return err
 	}
@@ -119,7 +127,7 @@ func (va *voiceAction) perform(s *discordgo.Session, ctx context) error {
 	return err
 }
 
-func getVoiceChannelIdByContext(s *discordgo.Session, ctx context) (string) {
+func getVoiceChannelIdByContext(ctx context) (string) {
 	for _, vs := range ctx.guild.VoiceStates {
 		if vs.UserID == ctx.author.ID {
 			return vs.ChannelID
@@ -128,7 +136,7 @@ func getVoiceChannelIdByContext(s *discordgo.Session, ctx context) (string) {
 	return ""
 }
 
-// need to user pointer receiver so the load method can modify the voiceAction's internal byte buffer
+// need to use pointer receiver so the load method can modify the voiceAction's internal byte buffer
 func (va *voiceAction) load() error {
 	va.buffer = make([][]byte, 0)
 	file, err := os.Open(va.file)
@@ -158,6 +166,7 @@ func (va *voiceAction) load() error {
 		va.buffer = append(va.buffer, inbuf)
 	}
 }
+
 // TODO on channel join ?? ~themesong~
 
 func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -166,19 +175,13 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if err != nil {
 		fmt.Printf("Error resolving message context: %v\n\n", err)
 	}
-
 	if !isAuthorAllowed(ctx.author) || !isChannelAllowed(ctx.channel) {
 		return
 	}
 
 	for _, c := range conditions {
-		// TODO could delegate to func parseContent(s string) string
-		// TODO alternative func matchesTrigger(s string, t string) bool
-		if strings.ToLower(m.Content) == c.trigger {
-			go c.response.perform(s, ctx)
-			/*if err != nil {
-				fmt.Printf("Error in response: %v\n", err)
-			}*/
+		if c.trigger(ctx) {
+			go c.response.perform(ctx)
 		}
 	}
 }
@@ -186,7 +189,9 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 func getMessageContext(s *discordgo.Session, m *discordgo.Message) (context, error) {
 	var ctx context
 	var err error
+	ctx.session = s
 	ctx.author = m.Author
+	ctx.message = m.Content
 	ctx.channel, err = s.Channel(m.ChannelID)
 	if err != nil {
 		return ctx, err
@@ -218,7 +223,10 @@ func createVoiceConditions() error {
 		fname := file.Name()
 		if (re.MatchString(fname)) {
 			c := condition{
-				trigger: re.FindStringSubmatch(fname)[1],
+				trigger: func(ctx context) bool {
+					phrase := re.FindStringSubmatch(fname)[1]
+					return strings.ToLower(ctx.message) == phrase
+				},
 				response: &voiceAction{
 					file: "media/audio/" + fname,
 				},
@@ -264,6 +272,13 @@ func main() {
 	fmt.Printf("Got me %v\n", botUser)
 
 	selfId = botUser.ID
+
+	/*newUser, err := discord.UserUpdate("", "", "aoebot", "", "")
+	if err != nil {
+		fmt.Print("Error change my name: %v\n", err)
+		return
+	}
+	fmt.Printf("Got new name %v\n", newUser)*/
 
 	// listen to discord websocket for events
 	err = discord.Open()
