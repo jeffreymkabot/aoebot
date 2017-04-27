@@ -92,11 +92,6 @@ func (ta *textAction) perform(ctx context) error {
 func (va *voiceAction) perform(ctx context) error {
 	var err error
 
-	err = va.load()
-	if err != nil {
-		return err
-	}
-
 	vcId := getVoiceChannelIdByContext(ctx)
 	if vcId == "" {
 		ctx.session.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
@@ -115,6 +110,7 @@ func (va *voiceAction) perform(ctx context) error {
 	// wait := -300 + rand.Intn(1000)
 	// fmt.Printf("Randomly decided to wait %v ms\n", wait)
 	// time.Sleep(time.Duration(wait) * time.Millisecond)
+	
 	_ = rand.Intn(10)
 	time.Sleep (100* time.Millisecond)
 
@@ -211,7 +207,7 @@ func isAuthorAllowed(author *discordgo.User) bool {
 	return author.ID != selfId
 }
 
-func createVoiceConditions() error {
+func createAoeChatCommands() error {
 	files, err := ioutil.ReadDir("./media/audio")
 	if err != nil {
 		return err
@@ -234,6 +230,17 @@ func createVoiceConditions() error {
 			conditions = append(conditions, c)
 		}
 	}
+	
+	for _, c := range conditions {
+		va, ok := c.response.(*voiceAction)
+		if (ok) {
+			// TODO could go va.load() for async
+			err := va.load()
+			if (err != nil) {
+				return err
+			}
+		}
+	}
 
 	return nil
 }
@@ -250,11 +257,11 @@ func main() {
 	}
 
 	// dynamically bind some voice actions
-	err := createVoiceConditions()
+	err := createAoeChatCommands()
 	if (err != nil) {
-		fmt.Printf("Error create conditions: %v\n", err)
+		fmt.Printf("Error create aoe commands: %v\n", err)
 	}
-	fmt.Println("Registered voice conditions")
+	fmt.Println("Registered aoe commands")
 
 	fmt.Println("Initiate discord session")
 	discord, err := discordgo.New("Bot " + token)
