@@ -6,14 +6,9 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
 	"os/signal"
-	"strings"
-	"regexp"
 	"time"
-	"encoding/binary"
 	"flag"
 	"github.com/bwmarrin/discordgo"
 )
@@ -25,88 +20,10 @@ var (
 	voiceQueue = make(chan voicePayload)
 )
 
-var conditions []condition = []condition{
-	{
-		trigger: func(ctx context) bool {
-			return strings.ToLower(ctx.message) == "?mayo"
-		},
-		response: &textAction{
-			content: "Is mayonnaise an instrument?",
-			tts:     true,
-		},
-	},
-	{
-		trigger: func(ctx context) bool {
-			return strings.ToLower(ctx.message) == "aoebot"
-		},
-		response: &textAction{
-			content: ":robot:",
-			tts:     true,
-		},
-	},
-}
-
-// associate a response to trigger
-type condition struct {
-	// TODO isTriggeredBy better name?
-	trigger  func(ctx context) bool
-	response action
-}
-
-// perform an action given the context (environment) of its trigger
-type action interface {
-	perform(ctx context) error
-}
-
-// type context interface{}
-type context struct {
-	session *discordgo.Session
-	guild   *discordgo.Guild
-	channel *discordgo.Channel
-	author  *discordgo.User
-	message string
-}
-
-type textAction struct {
-	content string
-	tts     bool
-}
-
-type voiceAction struct {
-	file   string
-	buffer [][]byte
-}
-
 type voicePayload struct {
 	buffer [][]byte
 	channelId string
 	guildId string
-}
-
-// type something to the text channel of the original context
-func (ta *textAction) perform(ctx context) error {
-	var err error
-	if ta.tts {
-		_, err = ctx.session.ChannelMessageSendTTS(ctx.channel.ID, ta.content)
-	} else {
-		_, err = ctx.session.ChannelMessageSend(ctx.channel.ID, ta.content)
-	}
-	return err
-}
-
-// say something to the voice channel of the user in the original context
-func (va *voiceAction) perform(ctx context) error{
-	vcId := getVoiceChannelIdByContext(ctx)
-	if vcId == "" {
-		ctx.session.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
-		return nil
-	}
-	voiceQueue <- voicePayload{
-		buffer: va.buffer,
-		channelId: vcId,
-		guildId: ctx.guild.ID,
-	}
-	return nil
 }
 
 func transmitVoice(s *discordgo.Session) {
@@ -144,37 +61,6 @@ func getVoiceChannelIdByContext(ctx context) (string) {
 		}
 	}
 	return ""
-}
-
-// need to use pointer receiver so the load method can modify the voiceAction's internal byte buffer
-func (va *voiceAction) load() error {
-	va.buffer = make([][]byte, 0)
-	file, err := os.Open(va.file)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	var opuslen int16
-
-	for {
-		err = binary.Read(file, binary.LittleEndian, &opuslen)
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		inbuf := make([]byte, opuslen)
-		err = binary.Read(file, binary.LittleEndian, &inbuf)
-
-		if err != nil {
-			return err
-		}
-
-		va.buffer = append(va.buffer, inbuf)
-	}
 }
 
 // TODO on channel join ?? ~themesong~
@@ -219,44 +105,6 @@ func isChannelAllowed(channel *discordgo.Channel) bool {
 
 func isAuthorAllowed(author *discordgo.User) bool {
 	return author.ID != selfId
-}
-
-func createAoeChatCommands() error {
-	files, err := ioutil.ReadDir("./media/audio")
-	if err != nil {
-		return err
-	}
-
-	re := regexp.MustCompile(`^0*(\d+).*\.dca$`)
-
-	for _, file := range files {
-		fname := file.Name()
-		if (re.MatchString(fname)) {
-			c := condition{
-				trigger: func(ctx context) bool {
-					phrase := re.FindStringSubmatch(fname)[1]
-					return strings.ToLower(ctx.message) == phrase
-				},
-				response: &voiceAction{
-					file: "media/audio/" + fname,
-				},
-			}
-			conditions = append(conditions, c)
-		}
-	}
-	
-	for _, c := range conditions {
-		va, ok := c.response.(*voiceAction)
-		if (ok) {
-			// TODO could go va.load() for async
-			err := va.load()
-			if (err != nil) {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
 
 func init() {
@@ -306,6 +154,16 @@ func main() {
 	fmt.Printf("Open session\n")
 
 	discord.AddHandler(onMessageCreate)
+
+	// TODO need a context with a channel to which to send message
+	// hello := &textAction{
+	// 	content: "Hello :)",
+	// 	tts: false,
+	// }
+	// goodbye := &textAction{
+	// 	content: "Goodbye :(",
+	// 	tts: false,
+	// }
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill)
