@@ -20,47 +20,54 @@ var (
 	voiceQueue = make(chan voicePayload)
 )
 
-type voicePayload struct {
-	buffer [][]byte
-	channelId string
-	guildId string
-}
-
-func transmitVoice(s *discordgo.Session) {
-	for vp := range voiceQueue {
-		// anonymous immediate to use defer since transmit voice is an infinite loop
-		err := func(vp voicePayload) error {
-			vc, err := s.ChannelVoiceJoin(vp.guildId, vp.channelId, false, true)
-			if err != nil {
-				return err
-			}
-			defer vc.Disconnect()
-
-			_ = vc.Speaking(true)
-			defer vc.Speaking(false)
-
-			time.Sleep (100 * time.Millisecond)
-			for _, sample := range vp.buffer {
-				vc.OpusSend <- sample
-			}
-			time.Sleep(100 * time.Millisecond)
-
-			return err
-		}(vp)
-		if (err != nil) {
-			fmt.Printf("Error transmit voice: %v\n", err)
+// listen on a channel of voicePayload
+// voicePayloads provide data meant to be dispatched to a voice channel in a discord guild
+// while we process a relatively contiguous stream of voicePayloads we can remain connected to the same channel
+func transmitVoice(s * discordgo.Session) {
+	var vc *discordgo.VoiceConnection
+	var err error
+	var ok bool
+	for {
+		select {
+			// 
+			case vp := <- voiceQueue:
+				if vp.channelId == "" {
+					break
+				}
+				fmt.Printf("exec voice payload\n")
+				// current connection in this guild
+				vc, ok = s.VoiceConnections[vp.guild.ID]
+				// disconnect from any channel we are already in if it isn't the new one
+				if ok && vc.ChannelID != vp.channelId {
+					vc.Speaking(false)
+					vc.Disconnect()
+					vc = nil
+				}
+				if (vc == nil) {
+					vc, err = s.ChannelVoiceJoin(vp.guild.ID, vp.channelId, false, true)
+					if err != nil {
+						fmt.Printf("Error join channel: %v\n", err)
+						break
+					}
+				}
+				_ = vc.Speaking(true)
+				time.Sleep (100 * time.Millisecond)
+				for _, sample := range vp.buffer {
+					vc.OpusSend <- sample
+				}
+				fmt.Printf("sent voice payload\n")
+				// wait a little bit before allowing hte possibility of disconnect
+				time.Sleep(200 * time.Millisecond)
+			// when there is no payload ready to dispatch, disconnect from any open voice connection
+			default:
+				if (vc != nil) {
+					fmt.Printf("disconnect from voice connection\n")
+					vc.Speaking(false)
+					vc.Disconnect()
+					vc = nil
+				}
 		}
 	}
-}
-
-func getVoiceChannelIdByContext(ctx context) (string) {
-	// fmt.Printf("# voice states %v\n", len(ctx.guild.VoiceStates))
-	for _, vs := range ctx.guild.VoiceStates {
-		if vs.UserID == ctx.author.ID {
-			return vs.ChannelID
-		}
-	}
-	return ""
 }
 
 // TODO on channel join ?? ~themesong~
@@ -88,6 +95,7 @@ func getMessageContext(s *discordgo.Session, m *discordgo.Message) (context, err
 	ctx.session = s
 	ctx.author = m.Author
 	ctx.message = m.Content
+	ctx.messageId = m.ID
 	ctx.channel, err = s.Channel(m.ChannelID)
 	if err != nil {
 		return ctx, err
@@ -122,8 +130,16 @@ func main() {
 	err := createAoeChatCommands()
 	if (err != nil) {
 		fmt.Printf("Error create aoe commands: %v\n", err)
+		return
 	}
 	fmt.Println("Registered aoe commands")
+
+	err = loadVoiceActionFiles()
+	if (err != nil) {
+		fmt.Printf("Error load voice action: %v\n", err)
+		return
+	}
+	fmt.Println("Loaded voice actions")
 
 	fmt.Println("Initiate discord session")
 	discord, err := discordgo.New("Bot " + token)
@@ -150,6 +166,7 @@ func main() {
 
 	if err != nil {
 		fmt.Printf("Error opening session: %v\n", err)
+		return
 	}
 	fmt.Printf("Open session\n")
 

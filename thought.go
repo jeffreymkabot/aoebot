@@ -5,6 +5,7 @@ import (
 	"os"
 	"encoding/binary"
 	"github.com/bwmarrin/discordgo"
+	"fmt"
 )
 
 // associate a response to trigger
@@ -19,13 +20,14 @@ type action interface {
 	perform(ctx context) error
 }
 
-// type context interface{}
+// TODO more generic to support capturing the context of more events 
 type context struct {
 	session *discordgo.Session
 	guild   *discordgo.Guild
 	channel *discordgo.Channel
 	author  *discordgo.User
 	message string
+	messageId string
 }
 
 type textAction struct {
@@ -33,9 +35,19 @@ type textAction struct {
 	tts     bool
 }
 
+type emojiReactionAction struct {
+	emoji string
+}
+
 type voiceAction struct {
 	file   string
 	buffer [][]byte
+}
+
+type voicePayload struct {
+	buffer [][]byte
+	channelId string
+	guild *discordgo.Guild
 }
 
 // type something to the text channel of the original context
@@ -49,19 +61,49 @@ func (ta *textAction) perform(ctx context) error {
 	return err
 }
 
+func (era *emojiReactionAction) perform(ctx context) error {
+	var err error
+	permissions, err := ctx.session.State.UserChannelPermissions(selfId, ctx.channel.ID)
+	fmt.Printf("My channel permissions are %v\n", permissions)
+	err = ctx.session.MessageReactionAdd(ctx.channel.ID, ctx.messageId, era.emoji)
+	return err
+}
+
 // say something to the voice channel of the user in the original context
 func (va *voiceAction) perform(ctx context) error{
 	vcId := getVoiceChannelIdByContext(ctx)
 	if vcId == "" {
-		ctx.session.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
+		//ctx.session.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
 		return nil
 	}
 	voiceQueue <- voicePayload{
 		buffer: va.buffer,
 		channelId: vcId,
-		guildId: ctx.guild.ID,
+		guild: ctx.guild,
 	}
 	return nil
+}
+
+func getVoiceChannelIdByContext(ctx context) string {
+	return getVoiceChannelIdByUser(ctx.guild, ctx.author)
+}
+
+func getVoiceChannelIdByUser(g *discordgo.Guild, u *discordgo.User) string {
+	for _, vs := range g.VoiceStates {
+		if vs.UserID == u.ID {
+			return vs.ChannelID
+		}
+	}
+	return ""
+}
+
+func getVoiceChannelIdByUserId(g *discordgo.Guild, uId string) string {
+	for _, vs := range g.VoiceStates {
+		if vs.UserID == uId {
+			return vs.ChannelID
+		}
+	}
+	return ""
 }
 
 // need to use pointer receiver so the load method can modify the voiceAction's internal byte buffer
