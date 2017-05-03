@@ -76,7 +76,7 @@ func (va *voiceAction) perform(ctx context) error{
 		//ctx.session.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
 		return nil
 	}
-	voiceQueue <- voicePayload{
+	voiceQueues[ctx.guild] <- &voicePayload{
 		buffer: va.buffer,
 		channelId: vcId,
 		guild: ctx.guild,

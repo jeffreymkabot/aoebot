@@ -9,7 +9,7 @@ import (
 var conditions []condition = []condition{
 	{
 		trigger: func(ctx context) bool {
-			return containsKeyword(strings.Fields(strings.ToLower(ctx.message)), "?mayo")
+			return containsAny(strings.Fields(strings.ToLower(ctx.message)), "?mayo")
 		},
 		response: &textAction{
 			content: "Is mayonnaise an instrument?",
@@ -18,7 +18,7 @@ var conditions []condition = []condition{
 	},
 	{
 		trigger: func(ctx context) bool {
-			return containsKeyword(strings.Fields(strings.ToLower(ctx.message)), "aoebot")
+			return containsAny(strings.Fields(strings.ToLower(ctx.message)), "aoebot")
 		},
 		response: &textAction{
 			content: ":robot:",
@@ -36,25 +36,12 @@ var conditions []condition = []condition{
 	},
 	{
 		trigger: func(ctx context) bool {
-			return containsKeyword(strings.Fields(strings.ToLower(ctx.message)), "hots", "hots?")
+			return containsAny(strings.Fields(strings.ToLower(ctx.message)), "hots", "hots?")
 		},
 		response: &emojiReactionAction{
 			emoji: "🤢", // unicode for :nauseated_face:
 		},
 	},
-}
-
-func containsKeyword(s []string, t ...string) bool {
-	set := make(map[string]bool)
-	for _, v := range s {
-		set[v] = true
-	}
-	for _, v := range t {
-		if set[v] {
-			return true
-		}
-	}
-	return false
 }
 
 func loadVoiceActionFiles() error {
@@ -86,7 +73,7 @@ func createAoeChatCommands() error {
 			c := condition{
 				trigger: func(ctx context) bool {
 					phrase := re.FindStringSubmatch(fname)[1]
-					return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), phrase)
+					return containsAny(strings.Split(strings.ToLower(ctx.message), " "), phrase)
 				},
 				response: &voiceAction{
 					file: "media/audio/" + fname,
