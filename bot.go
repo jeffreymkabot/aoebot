@@ -20,41 +20,70 @@ var (
 	voiceQueues map[*discordgo.Guild](chan *voicePayload)
 )
 
-func transmitVoice(s *discordgo.Session, q chan *voicePayload) {
-	stale := make(chan *discordgo.VoiceConnection)
-	go func(stale chan *discordgo.VoiceConnection, q chan *voicePayload) {
-		for vc := range stale {
-			if (vc != nil && len(q) < 1) {
-				vc.Speaking(false)
-				vc.Disconnect() // TODO resolve panic on concurrent websocket write w next vp in q to vc
-				vc = nil
-			}
+// dispatch voice data to a particular discord guild
+// listen to a queue of voicePayloads for that guild
+// voicePayloads provide data meant for a voice channel in a discord guild
+// we can remain connected to the same channel while we process a relatively contiguous stream of voicePayloads
+// for that channel
+func transmitVoice(s *discordgo.Session, g *discordgo.Guild) {
+	// we can only have one voice connection per guild
+	var vc *discordgo.VoiceConnection 
+	var err error
+	// use capacity > 0 so that one payload can sit and wait while processing another
+	queue := make(chan *voicePayload, 1)
+	// expose this queue to be used by voiceActions
+	voiceQueues[g] = queue
+	// use capacity > 0 because this channel is written to and read to in same thread
+	stale := make(chan struct{}, 1)
+	// try to connect to the afk channel to start
+	_, _ = s.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
+
+	// vc Join, vc.Speaking(), vc.OpusSend <-, and vc.Disconnect() 
+	// in same thread to prevent concurrent websocket write
+	for {
+		select {
+			// stale should only have something in it when the queue is empty
+			// use select and block on stale so we don't infinitely loop
+			// in order to check if we should disconnect
+			case <- stale:
+				// try to connect to the afk channel when we queue is empty
+				vc, err = s.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
+				if err != nil && vc != nil {
+					fmt.Printf("Error join afk channel: %#v\n", err)
+					_ = vc.Speaking(false)
+					_ = vc.Disconnect()
+					vc = nil
+				}
+			default:
+				// when idle we want to block on queue not on stale
+				vp := <- queue
+				func(vp *voicePayload) {
+					if vp.channelId == "" {
+						return
+					}
+					// only attempt to join a channel in g
+					vc, err = s.ChannelVoiceJoin(g.ID, vp.channelId, false, true)
+					if err != nil {
+						fmt.Printf("Error join channel: %#v\n", err)
+						return
+					}
+					fmt.Printf("Joined channel: %p\n", vc)
+					fmt.Printf("exec voice payload: %p\n", vp)
+					_ = vc.Speaking(true)
+					time.Sleep(100 * time.Millisecond)
+					for _, sample := range vp.buffer {
+						vc.OpusSend <- sample
+					}
+					time.Sleep(100 * time.Millisecond)
+					_ = vc.Speaking(false)
+				}(vp)
+				// lookahead
+				// "safe" because checking queue in a single thread
+				// and next action would be to receive from stale?
+				if (len(queue) < 1) {
+					stale <- struct{}{}
+				}
 		}
-	}(stale, q)
-	for vp := range q {
-		if vp.channelId == "" {
-			continue
-		}
-		fmt.Printf("exec voice payload: %p\n", vp)
-		vc, err := s.ChannelVoiceJoin(vp.guild.ID, vp.channelId, false, true)
-		if err != nil {
-			fmt.Printf("Error join channel: %#v\n", err)
-			continue
-		}
-		fmt.Printf("Joined channel: %p\n", vc)
-		_ = vc.Speaking(true)
-		time.Sleep (100 * time.Millisecond)
-		for _, sample := range vp.buffer {
-			vc.OpusSend <- sample
-		}
-		// wait a little bit before leaving the connection stale
-		time.Sleep(200 * time.Millisecond)
-		_ = vc.Speaking(false)
-		// submit this connection to be considered for staleness
-		// goroutine so we don't block the main transmit voice thread
-		go func(vc *discordgo.VoiceConnection) {
-			stale <- vc 
-		}(vc)
 	}
 }
 
@@ -62,71 +91,12 @@ func onReady(s *discordgo.Session, r *discordgo.Ready) {
 	fmt.Printf("Ready: %#v\n", r)
 	voiceQueues = make(map[*discordgo.Guild](chan *voicePayload))
 	for _, g := range r.Guilds {
-		voiceQueues[g] = make(chan *voicePayload)
-		go transmitVoice(s, voiceQueues[g])
+		// exec independent transmitVoice per each guild g
+		go transmitVoice(s, g)
 	}
 }
 
-// listen on a channel of voicePayload
-// voicePayloads provide data meant to be dispatched to a voice channel in a discord guild
-// while we process a relatively contiguous stream of voicePayloads we can remain connected to the same channel
-// func transmitVoice2(s *discordgo.Session) {
-// 	stale := make(chan *discordgo.VoiceConnection)
-// 	for {
-// 		select {
-// 			// 
-// 			case vp := <- voiceQueue:
-// 				var vc *discordgo.VoiceConnection
-// 				var err error
-// 				var ok bool
-// 				if vp.channelId == "" {
-// 					break
-// 				}
-// 				fmt.Printf("exec voice payload\n")
-// 				// current connection in this guild
-// 				vc, ok = s.VoiceConnections[vp.guild.ID]
-// 				// disconnect from any channel we are already in if it isn't the new one
-// 				if ok && vc.ChannelID != vp.channelId {
-// 					vc.Speaking(false)
-// 					vc.Disconnect()
-// 					vc = nil
-// 				}
-// 				if (vc == nil) {
-// 					vc, err = s.ChannelVoiceJoin(vp.guild.ID, vp.channelId, false, true)
-// 					if err != nil {
-// 						fmt.Printf("Error join channel: %#v\n", err)
-// 						break
-// 					}
-// 				}
-// 				_ = vc.Speaking(true)
-// 				time.Sleep (100 * time.Millisecond)
-// 				for _, sample := range vp.buffer {
-// 					vc.OpusSend <- sample
-// 				}
-// 				fmt.Printf("sent voice payload\n")
-// 				// wait a little bit before allowing hte possibility of disconnect
-// 				time.Sleep(200 * time.Millisecond)
-// 				// push stale voice connections into the stale channel
-// 				// goroutine so we don't block the main transmitVoice thread
-// 				go func(vc *discordgo.VoiceConnection) {
-// 					stale <- vc
-// 				}(vc)
-// 			// disconnect from any stale voice connection
-// 			case vc := <- stale:
-// 				if (len(voiceQueue) < 1) {
-// 					fmt.Printf("disconnect from voice connection\n")
-// 					vc.Speaking(false)
-// 					vc.Disconnect()
-// 					vc = nil
-// 				} else {
-// 					stale <- vc
-// 				}
-// 		}
-// 	}
-// }
-
 // TODO on channel join ?? ~themesong~
-
 
 func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	fmt.Printf("Saw someone's message: %#v\n", m.Message)
@@ -205,7 +175,6 @@ func main() {
 	}
 	fmt.Printf("Got session\n")
 
-	discord.AddHandler(onReady)
 
 	botUser, err := discord.User("@me")
 	if err != nil {
@@ -213,31 +182,19 @@ func main() {
 		return
 	}
 	fmt.Printf("Got me %#v\n", botUser)
-
 	selfId = botUser.ID
 
-	// go transmitVoice(discord)
-
+	discord.AddHandler(onReady)
 	// listen to discord websocket for events
 	// this triggers the ready event on success
 	err = discord.Open()
-	defer discord.Close()
 	if err != nil {
 		fmt.Printf("Error opening session: %#v\n", err)
 		return
 	}
+	defer discord.Close()
 
 	discord.AddHandler(onMessageCreate)
-
-	// TODO need a context with a channel to which to send message
-	// hello := &textAction{
-	// 	content: "Hello :)",
-	// 	tts: false,
-	// }
-	// goodbye := &textAction{
-	// 	content: "Goodbye :(",
-	// 	tts: false,
-	// }
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill)

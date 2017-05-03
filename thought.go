@@ -70,12 +70,15 @@ func (era *emojiReactionAction) perform(ctx context) error {
 }
 
 // say something to the voice channel of the user in the original context
-func (va *voiceAction) perform(ctx context) error{
+func (va *voiceAction) perform(ctx context) error {
 	vcId := getVoiceChannelIdByContext(ctx)
 	if vcId == "" {
 		//ctx.session.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
 		return nil
 	}
+	// this will block if voiceQueues[ctx.guild] is full 
+	// should have capacity > 0 so that a payload can wait in queue,
+	// indicating a possibly contiguous stream of voice in a channel of the guild
 	voiceQueues[ctx.guild] <- &voicePayload{
 		buffer: va.buffer,
 		channelId: vcId,
