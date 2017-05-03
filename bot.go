@@ -6,16 +6,9 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
 	"os/signal"
-	"strings"
-	"regexp"
-	"math/rand"
 	"time"
-	// "exec"
-	"encoding/binary"
 	"flag"
 	"github.com/bwmarrin/discordgo"
 )
@@ -24,161 +17,100 @@ import (
 var (
 	selfId string
 	token  string
+	voiceQueues map[*discordgo.Guild](chan *voicePayload)
 )
 
-var conditions []condition = []condition{
-	{
-		trigger: "?mayo",
-		response: &textAction{
-			content: "Is mayonnaise an instrument?",
-			tts:     true,
-		},
-	},
-	/*{
-		trigger: "30",
-		response: &voiceAction{
-			file: "media/audio/30 wololo.dca",
-		},
-	},*/
-}
-
-// associate a response to trigger
-type condition struct {
-	trigger  string
-	response action
-}
-
-// perform an action given the context (environment) of its trigger
-type action interface {
-	perform(s *discordgo.Session, ctx context) error
-}
-
-type context struct {
-	guild   *discordgo.Guild
-	channel *discordgo.Channel
-	author  *discordgo.User
-}
-
-type textAction struct {
-	content string
-	tts     bool
-}
-
-// say something to the text channel of the original context
-func (ta *textAction) perform(s *discordgo.Session, ctx context) error {
+// dispatch voice data to a particular discord guild
+// listen to a queue of voicePayloads for that guild
+// voicePayloads provide data meant for a voice channel in a discord guild
+// we can remain connected to the same channel while we process a relatively contiguous stream of voicePayloads
+// for that channel
+func transmitVoice(s *discordgo.Session, g *discordgo.Guild) {
+	// we can only have one voice connection per guild
+	var vc *discordgo.VoiceConnection 
 	var err error
-	if ta.tts {
-		_, err = s.ChannelMessageSendTTS(ctx.channel.ID, ta.content)
-	} else {
-		_, err = s.ChannelMessageSend(ctx.channel.ID, ta.content)
-	}
-	return err
-}
+	// use capacity > 0 so that one payload can sit and wait while processing another
+	queue := make(chan *voicePayload, 1)
+	// expose this queue to be used by voiceActions
+	voiceQueues[g] = queue
+	// use capacity > 0 because this channel is written to and read to in same thread
+	stale := make(chan struct{}, 1)
+	// try to connect to the afk channel to start
+	_, _ = s.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
 
-type voiceAction struct {
-	file   string
-	buffer [][]byte
-}
-
-// say something to the voice channel of the user in the original context
-func (va *voiceAction) perform(s *discordgo.Session, ctx context) error {
-	var err error
-
-	err = va.load()
-	if err != nil {
-		return err
-	}
-
-	vcId := getVoiceChannelIdByContext(s, ctx)
-	if vcId == "" {
-		s.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
-		return nil
-	}
-
-	vc, err := s.ChannelVoiceJoin(ctx.guild.ID, vcId, false, true)
-	if err != nil {
-		return err
-	}
-	defer vc.Disconnect()
-
-	_ = vc.Speaking(true)
-	defer vc.Speaking(false)
-
-	// wait := -300 + rand.Intn(1000)
-	// fmt.Printf("Randomly decided to wait %v ms\n", wait)
-	// time.Sleep(time.Duration(wait) * time.Millisecond)
-	_ = rand.Intn(10)
-	time.Sleep (100* time.Millisecond)
-
-	for _, sample := range va.buffer {
-		vc.OpusSend <- sample
-	}
-
-	time.Sleep(100 * time.Millisecond)
-
-	return err
-}
-
-func getVoiceChannelIdByContext(s *discordgo.Session, ctx context) (string) {
-	for _, vs := range ctx.guild.VoiceStates {
-		if vs.UserID == ctx.author.ID {
-			return vs.ChannelID
-		}
-	}
-	return ""
-}
-
-// need to user pointer receiver so the load method can modify the voiceAction's internal byte buffer
-func (va *voiceAction) load() error {
-	va.buffer = make([][]byte, 0)
-	file, err := os.Open(va.file)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	var opuslen int16
-
+	// vc Join, vc.Speaking(), vc.OpusSend <-, and vc.Disconnect() 
+	// in same thread to prevent concurrent websocket write
 	for {
-		err = binary.Read(file, binary.LittleEndian, &opuslen)
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			return nil
+		select {
+			// stale should only have something in it when the queue is empty
+			// use select and block on stale so we don't infinitely loop
+			// in order to check if we should disconnect
+			case <- stale:
+				// try to connect to the afk channel when we queue is empty
+				vc, err = s.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
+				if err != nil && vc != nil {
+					fmt.Printf("Error join afk channel: %#v\n", err)
+					_ = vc.Speaking(false)
+					_ = vc.Disconnect()
+					vc = nil
+				}
+			default:
+				// when idle we want to block on queue not on stale
+				vp := <- queue
+				func(vp *voicePayload) {
+					if vp.channelId == "" {
+						return
+					}
+					// only attempt to join a channel in g
+					vc, err = s.ChannelVoiceJoin(g.ID, vp.channelId, false, true)
+					if err != nil {
+						fmt.Printf("Error join channel: %#v\n", err)
+						return
+					}
+					fmt.Printf("Joined channel: %p\n", vc)
+					fmt.Printf("exec voice payload: %p\n", vp)
+					_ = vc.Speaking(true)
+					time.Sleep(100 * time.Millisecond)
+					for _, sample := range vp.buffer {
+						vc.OpusSend <- sample
+					}
+					time.Sleep(100 * time.Millisecond)
+					_ = vc.Speaking(false)
+				}(vp)
+				// lookahead
+				// "safe" because checking queue in a single thread
+				// and next action would be to receive from stale?
+				if (len(queue) < 1) {
+					stale <- struct{}{}
+				}
 		}
-		if err != nil {
-			return err
-		}
-
-		inbuf := make([]byte, opuslen)
-		err = binary.Read(file, binary.LittleEndian, &inbuf)
-
-		if err != nil {
-			return err
-		}
-
-		va.buffer = append(va.buffer, inbuf)
 	}
 }
+
+func onReady(s *discordgo.Session, r *discordgo.Ready) {
+	fmt.Printf("Ready: %#v\n", r)
+	voiceQueues = make(map[*discordgo.Guild](chan *voicePayload))
+	for _, g := range r.Guilds {
+		// exec independent transmitVoice per each guild g
+		go transmitVoice(s, g)
+	}
+}
+
 // TODO on channel join ?? ~themesong~
 
 func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	fmt.Printf("Saw someone's message: %v\n", m.Message)
+	fmt.Printf("Saw someone's message: %#v\n", m.Message)
 	ctx, err := getMessageContext(s, m.Message)
 	if err != nil {
-		fmt.Printf("Error resolving message context: %v\n\n", err)
+		fmt.Printf("Error resolving message context: %#v\n\n", err)
 	}
-
 	if !isAuthorAllowed(ctx.author) || !isChannelAllowed(ctx.channel) {
 		return
 	}
 
 	for _, c := range conditions {
-		// TODO could delegate to func parseContent(s string) string
-		// TODO alternative func matchesTrigger(s string, t string) bool
-		if strings.ToLower(m.Content) == c.trigger {
-			go c.response.perform(s, ctx)
-			/*if err != nil {
-				fmt.Printf("Error in response: %v\n", err)
-			}*/
+		if c.trigger(ctx) {
+			go c.response.perform(ctx)
 		}
 	}
 }
@@ -186,7 +118,10 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 func getMessageContext(s *discordgo.Session, m *discordgo.Message) (context, error) {
 	var ctx context
 	var err error
+	ctx.session = s
 	ctx.author = m.Author
+	ctx.message = m.Content
+	ctx.messageId = m.ID
 	ctx.channel, err = s.Channel(m.ChannelID)
 	if err != nil {
 		return ctx, err
@@ -206,30 +141,6 @@ func isAuthorAllowed(author *discordgo.User) bool {
 	return author.ID != selfId
 }
 
-func createVoiceConditions() error {
-	files, err := ioutil.ReadDir("./media/audio")
-	if err != nil {
-		return err
-	}
-
-	re := regexp.MustCompile(`^0*(\d+).*\.dca$`)
-
-	for _, file := range files {
-		fname := file.Name()
-		if (re.MatchString(fname)) {
-			c := condition{
-				trigger: re.FindStringSubmatch(fname)[1],
-				response: &voiceAction{
-					file: "media/audio/" + fname,
-				},
-			}
-			conditions = append(conditions, c)
-		}
-	}
-
-	return nil
-}
-
 func init() {
 	flag.StringVar(&token, "t", "", "Bot Auth Token")
 }
@@ -242,37 +153,46 @@ func main() {
 	}
 
 	// dynamically bind some voice actions
-	err := createVoiceConditions()
+	err := createAoeChatCommands()
 	if (err != nil) {
-		fmt.Printf("Error create conditions: %v\n", err)
+		fmt.Printf("Error create aoe commands: %#v\n", err)
+		return
 	}
-	fmt.Println("Registered voice conditions")
+	fmt.Println("Registered aoe commands")
+
+	err = loadVoiceActionFiles()
+	if (err != nil) {
+		fmt.Printf("Error load voice action: %#v\n", err)
+		return
+	}
+	fmt.Println("Loaded voice actions")
 
 	fmt.Println("Initiate discord session")
 	discord, err := discordgo.New("Bot " + token)
 	if err != nil {
-		fmt.Printf("Error initiate session: %v\n", err)
+		fmt.Printf("Error initiate session: %#v\n", err)
 		return
 	}
 	fmt.Printf("Got session\n")
 
+
 	botUser, err := discord.User("@me")
 	if err != nil {
-		fmt.Printf("Error get user: %v\n", err)
+		fmt.Printf("Error get user: %#v\n", err)
 		return
 	}
-	fmt.Printf("Got me %v\n", botUser)
-
+	fmt.Printf("Got me %#v\n", botUser)
 	selfId = botUser.ID
 
+	discord.AddHandler(onReady)
 	// listen to discord websocket for events
+	// this triggers the ready event on success
 	err = discord.Open()
-	defer discord.Close()
-
 	if err != nil {
-		fmt.Printf("Error opening session: %v\n", err)
+		fmt.Printf("Error opening session: %#v\n", err)
+		return
 	}
-	fmt.Printf("Open session\n")
+	defer discord.Close()
 
 	discord.AddHandler(onMessageCreate)
 
