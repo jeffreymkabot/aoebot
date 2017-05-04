@@ -2,8 +2,8 @@ package main
 
 import (
 	"io/ioutil"
-	"strings"
 	"regexp"
+	"strings"
 )
 
 var conditions []condition = []condition{
@@ -31,7 +31,7 @@ var conditions []condition = []condition{
 		},
 		response: &textAction{
 			content: ":nauseated_face:",
-			tts: false,
+			tts:     false,
 		},
 	},
 	{
@@ -47,11 +47,11 @@ var conditions []condition = []condition{
 func loadVoiceActionFiles() error {
 	for _, c := range conditions {
 		va, ok := c.response.(*voiceAction)
-		if (ok) {
+		if ok {
 			// TODO could go va.load() for async
 			err := va.load()
 			// TODO allow fail individually
-			if (err != nil) {
+			if err != nil {
 				return err
 			}
 		}
@@ -69,7 +69,7 @@ func createAoeChatCommands() error {
 
 	for _, file := range files {
 		fname := file.Name()
-		if (re.MatchString(fname)) {
+		if re.MatchString(fname) {
 			c := condition{
 				trigger: func(ctx context) bool {
 					phrase := re.FindStringSubmatch(fname)[1]

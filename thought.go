@@ -1,11 +1,11 @@
 package main
 
 import (
+	"encoding/binary"
+	"fmt"
+	"github.com/bwmarrin/discordgo"
 	"io"
 	"os"
-	"encoding/binary"
-	"github.com/bwmarrin/discordgo"
-	"fmt"
 )
 
 // associate a response to trigger
@@ -20,13 +20,13 @@ type action interface {
 	perform(ctx context) error
 }
 
-// TODO more generic to support capturing the context of more events 
+// TODO more generic to support capturing the context of more events
 type context struct {
-	session *discordgo.Session
-	guild   *discordgo.Guild
-	channel *discordgo.Channel
-	author  *discordgo.User
-	message string
+	session   *discordgo.Session
+	guild     *discordgo.Guild
+	channel   *discordgo.Channel
+	author    *discordgo.User
+	message   string
 	messageId string
 }
 
@@ -45,9 +45,9 @@ type voiceAction struct {
 }
 
 type voicePayload struct {
-	buffer [][]byte
+	buffer    [][]byte
 	channelId string
-	guild *discordgo.Guild
+	guild     *discordgo.Guild
 }
 
 // type something to the text channel of the original context
@@ -76,13 +76,13 @@ func (va *voiceAction) perform(ctx context) error {
 		//ctx.session.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
 		return nil
 	}
-	// this will block if voiceQueues[ctx.guild] is full 
+	// this will block if voiceQueues[ctx.guild] is full
 	// should have capacity > 0 so that a payload can wait in queue,
 	// indicating a possibly contiguous stream of voice in a channel of the guild
 	voiceQueues[ctx.guild] <- &voicePayload{
-		buffer: va.buffer,
+		buffer:    va.buffer,
 		channelId: vcId,
-		guild: ctx.guild,
+		guild:     ctx.guild,
 	}
 	return nil
 }
