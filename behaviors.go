@@ -1,6 +1,7 @@
 package main
 
 import (
+	// "fmt"
 	"io/ioutil"
 	"regexp"
 	"strings"
@@ -9,7 +10,7 @@ import (
 var conditions []condition = []condition{
 	{
 		trigger: func(ctx context) bool {
-			return containsAny(strings.Fields(strings.ToLower(ctx.message)), "?mayo")
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "?mayo")
 		},
 		response: &textAction{
 			content: "Is mayonnaise an instrument?",
@@ -18,7 +19,7 @@ var conditions []condition = []condition{
 	},
 	{
 		trigger: func(ctx context) bool {
-			return containsAny(strings.Fields(strings.ToLower(ctx.message)), "aoebot")
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "aoebot", "aoebot?")
 		},
 		response: &textAction{
 			content: ":robot:",
@@ -36,10 +37,19 @@ var conditions []condition = []condition{
 	},
 	{
 		trigger: func(ctx context) bool {
-			return containsAny(strings.Fields(strings.ToLower(ctx.message)), "hots", "hots?")
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "hots", "hots?")
 		},
 		response: &emojiReactionAction{
 			emoji: "🤢", // unicode for :nauseated_face:
+		},
+	},
+	{
+		trigger: func(ctx context) bool {
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "smash")
+		},
+		response: &textAction{
+			content: "Smash that ready button!",
+			tts:     true,
 		},
 	},
 }
@@ -73,7 +83,7 @@ func createAoeChatCommands() error {
 			c := condition{
 				trigger: func(ctx context) bool {
 					phrase := re.FindStringSubmatch(fname)[1]
-					return containsAny(strings.Split(strings.ToLower(ctx.message), " "), phrase)
+					return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), phrase)
 				},
 				response: &voiceAction{
 					file: "media/audio/" + fname,

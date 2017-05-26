@@ -53,6 +53,7 @@ type voicePayload struct {
 // type something to the text channel of the original context
 func (ta *textAction) perform(ctx context) error {
 	var err error
+	fmt.Printf("perform text action %#v\n", ta)
 	if ta.tts {
 		_, err = ctx.session.ChannelMessageSendTTS(ctx.channel.ID, ta.content)
 	} else {
@@ -63,6 +64,7 @@ func (ta *textAction) perform(ctx context) error {
 
 func (era *emojiReactionAction) perform(ctx context) error {
 	var err error
+	fmt.Printf("perform emoji action %#v\n", era)
 	permissions, err := ctx.session.State.UserChannelPermissions(selfId, ctx.channel.ID)
 	fmt.Printf("My channel permissions are %v\n", permissions)
 	err = ctx.session.MessageReactionAdd(ctx.channel.ID, ctx.messageId, era.emoji)
@@ -76,6 +78,7 @@ func (va *voiceAction) perform(ctx context) error {
 		//ctx.session.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
 		return nil
 	}
+	fmt.Printf("perform voice action %#v\n", va.file)
 	// this will block if voiceQueues[ctx.guild] is full
 	// should have capacity > 0 so that a payload can wait in queue,
 	// indicating a possibly contiguous stream of voice in a channel of the guild

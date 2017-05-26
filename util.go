@@ -1,21 +1,9 @@
 package main
 
 import (
+	// "fmt"
 	"reflect"
 )
-
-func containsKeyword(s []string, t ...string) bool {
-	set := make(map[string]bool)
-	for _, v := range s {
-		set[v] = true
-	}
-	for _, v := range t {
-		if set[v] {
-			return true
-		}
-	}
-	return false
-}
 
 // http://stackoverflow.com/questions/10485743/contains-method-for-a-slice
 func containsAny(s interface{}, t ...interface{}) bool {
@@ -29,6 +17,22 @@ func containsAny(s interface{}, t ...interface{}) bool {
 			if _, ok := set[v]; ok {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func containsKeyword(s []string, t ...string) bool {
+	set := make(map[string]struct{})
+	for _, v := range s {
+		set[v] = struct{}{}
+	}
+	// fmt.Printf("set: %#v\n", set)
+	// fmt.Printf("targets: %#v\n", t)
+	for _, v := range t {
+		if _, ok := set[v]; ok {
+			// fmt.Printf("found target\n")
+			return true
 		}
 	}
 	return false
