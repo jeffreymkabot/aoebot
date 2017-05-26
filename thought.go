@@ -46,7 +46,7 @@ type voiceAction struct {
 
 type voicePayload struct {
 	buffer    [][]byte
-	channelId string
+	channelID string
 	guild     *discordgo.Guild
 }
 
@@ -79,12 +79,9 @@ func (va *voiceAction) perform(ctx context) error {
 		return nil
 	}
 	fmt.Printf("perform voice action %#v\n", va.file)
-	// this will block if voiceQueues[ctx.guild] is full
-	// should have capacity > 0 so that a payload can wait in queue,
-	// indicating a possibly contiguous stream of voice in a channel of the guild
 	voiceQueues[ctx.guild] <- &voicePayload{
 		buffer:    va.buffer,
-		channelId: vcId,
+		channelID: vcId,
 		guild:     ctx.guild,
 	}
 	return nil

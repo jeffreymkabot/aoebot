@@ -17,7 +17,7 @@ import (
 var (
 	selfId      string
 	token       string
-	voiceQueues map[*discordgo.Guild](chan *voicePayload)
+	voiceQueues map[*discordgo.Guild](chan<- *voicePayload)
 )
 
 // dispatch voice data to a particular discord guild
@@ -25,76 +25,55 @@ var (
 // voicePayloads provide data meant for a voice channel in a discord guild
 // we can remain connected to the same channel while we process a relatively contiguous stream of voicePayloads
 // for that channel
-func transmitVoice(s *discordgo.Session, g *discordgo.Guild) {
-	// we can only have one voice connection per guild
+func speak(s *discordgo.Session, g *discordgo.Guild) chan<- *voicePayload {
 	var vc *discordgo.VoiceConnection
 	var err error
-	// use capacity > 0 so that one payload can sit and wait while processing another
-	queue := make(chan *voicePayload, 1)
-	// expose this queue to be used by voiceActions
-	voiceQueues[g] = queue
-	// use capacity > 0 because this channel is written to and read to in same thread
-	stale := make(chan struct{}, 1)
-	// try to connect to the afk channel to start
-	_, _ = s.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
-
-	// vc Join, vc.Speaking(), vc.OpusSend <-, and vc.Disconnect()
-	// in same thread to prevent concurrent websocket write
-	for {
-		select {
-		// stale should only have something in it when the queue is empty
-		// use select and block on stale so we don't infinitely loop
-		// in order to check if we should disconnect
-		case <-stale:
-			// try to connect to the afk channel when we queue is empty
-			vc, err = s.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
-			if err != nil && vc != nil {
-				fmt.Printf("Error join afk channel: %#v\n", err)
-				_ = vc.Speaking(false)
-				_ = vc.Disconnect()
-				vc = nil
+	var t *time.Timer
+	queue := make(chan *voicePayload)
+	defer s.ChannelVoiceJoin(g.ID, g.AfkChannelID, false, true)
+	go func() {
+		for vp := range queue {
+			if t != nil {
+				t.Stop()
 			}
-		default:
-			// when idle we want to block on queue not on stale
-			vp := <-queue
-			func(vp *voicePayload) {
-				if vp.channelId == "" {
-					return
-				}
-				// only attempt to join a channel in g
-				vc, err = s.ChannelVoiceJoin(g.ID, vp.channelId, false, true)
-				if err != nil {
-					fmt.Printf("Error join channel: %#v\n", err)
-					return
-				}
-				fmt.Printf("Joined channel: %p\n", vc)
-				fmt.Printf("exec voice payload: %p\n", vp)
-				_ = vc.Speaking(true)
-				time.Sleep(100 * time.Millisecond)
-				for _, sample := range vp.buffer {
-					vc.OpusSend <- sample
-				}
-				time.Sleep(100 * time.Millisecond)
-				_ = vc.Speaking(false)
-			}(vp)
-			// lookahead
-			// "safe" because checking queue in a single thread
-			// and next action would be to receive from stale?
-			if len(queue) < 1 {
-				stale <- struct{}{}
+			fmt.Printf("Speak\n")
+			vc, err = s.ChannelVoiceJoin(g.ID, vp.channelID, false, true)
+			if err != nil {
+				fmt.Printf("Error join channel: %#v\n", err)
+				break
 			}
+			_ = vc.Speaking(true)
+			time.Sleep(100 * time.Millisecond)
+			for _, sample := range vp.buffer {
+				vc.OpusSend <- sample
+			}
+			time.Sleep(100 * time.Millisecond)
+			_ = vc.Speaking(false)
+			t = time.AfterFunc(300*time.Millisecond, func() {
+				fmt.Printf("Join afk channel\n")
+				vc, err = s.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
+				if err != nil && vc != nil {
+					fmt.Printf("Error join afk: %#v\n", err)
+					_ = vc.Speaking(false)
+					_ = vc.Disconnect()
+					vc = nil
+				}
+			})
 		}
-	}
+	}()
+	return queue
 }
 
 func onReady(s *discordgo.Session, r *discordgo.Ready) {
 	fmt.Printf("Ready: %#v\n", r)
-	voiceQueues = make(map[*discordgo.Guild](chan *voicePayload))
+	voiceQueues = make(map[*discordgo.Guild](chan<- *voicePayload))
 	time.Sleep(100 * time.Millisecond)
 	for _, g := range r.Guilds {
-		// exec independent transmitVoice per each guild g
-		go transmitVoice(s, g)
+		// exec independent per each guild g
+		q := speak(s, g)
+		voiceQueues[g] = q
 	}
+	s.AddHandler(onMessageCreate)
 }
 
 // TODO on channel join ?? ~themesong~
@@ -142,11 +121,8 @@ func isAuthorAllowed(author *discordgo.User) bool {
 	return author.ID != selfId
 }
 
-func init() {
-	flag.StringVar(&token, "t", "", "Bot Auth Token")
-}
-
 func main() {
+	flag.StringVar(&token, "t", "", "Bot Auth Token")
 	flag.Parse()
 	if token == "" {
 		flag.Usage()
@@ -193,8 +169,6 @@ func main() {
 		fmt.Printf("Error opening session: %#v\n", err)
 		return
 	}
-
-	discord.AddHandler(onMessageCreate)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill)
