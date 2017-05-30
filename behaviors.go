@@ -52,6 +52,15 @@ var conditions []condition = []condition{
 			tts:     true,
 		},
 	},
+	{
+		trigger: func(ctx context) bool {
+			return false
+		},
+		response: &voiceAction{
+			file: "media/audio/shyronnie1.dca",
+		},
+		name: "shyronnie",
+	},
 }
 
 func loadVoiceActionFiles() error {
@@ -80,14 +89,15 @@ func createAoeChatCommands() error {
 	for _, file := range files {
 		fname := file.Name()
 		if re.MatchString(fname) {
+			phrase := re.FindStringSubmatch(fname)[1]
 			c := condition{
 				trigger: func(ctx context) bool {
-					phrase := re.FindStringSubmatch(fname)[1]
 					return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), phrase)
 				},
 				response: &voiceAction{
 					file: "media/audio/" + fname,
 				},
+				name: phrase,
 			}
 			conditions = append(conditions, c)
 		}

@@ -13,6 +13,7 @@ type condition struct {
 	// TODO isTriggeredBy better name?
 	trigger  func(ctx context) bool
 	response action
+	name     string
 }
 
 // perform an action given the context (environment) of its trigger

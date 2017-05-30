@@ -15,9 +15,10 @@ import (
 
 // these live globally for the lifetime of the bot
 var (
-	selfId      string
-	token       string
-	voiceQueues map[*discordgo.Guild](chan<- *voicePayload)
+	selfId                string
+	token                 string
+	voiceQueues           map[*discordgo.Guild](chan<- *voicePayload)
+	voiceChannelOccupancy map[string]string
 )
 
 // dispatch voice data to a particular discord guild
@@ -67,13 +68,18 @@ func speak(s *discordgo.Session, g *discordgo.Guild) chan<- *voicePayload {
 func onReady(s *discordgo.Session, r *discordgo.Ready) {
 	fmt.Printf("Ready: %#v\n", r)
 	voiceQueues = make(map[*discordgo.Guild](chan<- *voicePayload))
+	voiceChannelOccupancy = make(map[string]string)
 	time.Sleep(100 * time.Millisecond)
 	for _, g := range r.Guilds {
 		// exec independent per each guild g
 		q := speak(s, g)
 		voiceQueues[g] = q
+		for _, v := range g.VoiceStates {
+			voiceChannelOccupancy[v.UserID] = v.ChannelID
+		}
 	}
 	s.AddHandler(onMessageCreate)
+	s.AddHandler(onVoiceStateUpdate)
 }
 
 // TODO on channel join ?? ~themesong~
@@ -91,6 +97,55 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	for _, c := range conditions {
 		if c.trigger(ctx) {
 			go c.response.perform(ctx)
+		}
+	}
+}
+
+// TODO some quick and dirty hard coded experiments for now
+func onVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
+	fmt.Printf("Saw a voice state update: %#v\n", v.VoiceState)
+	userID := v.VoiceState.UserID
+	guildID := v.VoiceState.GuildID
+	guild, _ := s.Guild(guildID)
+	channelID := v.VoiceState.ChannelID
+
+	const willowID = "140136792849514496"
+	const shyronnieID = "140898747264663552"
+
+	if voiceChannelOccupancy[userID] != channelID {
+		voiceChannelOccupancy[userID] = channelID
+		if channelID == "" {
+			return
+		}
+		// if userID == willowID {
+		// 	for _, c := range conditions {
+		// 		if c.name == "39" {
+		// 			vp := &voicePayload{
+		// 				buffer:    c.response.(*voiceAction).buffer,
+		// 				channelID: channelID,
+		// 				guild:     guild,
+		// 			}
+		// 			time.AfterFunc(100*time.Millisecond, func() {
+		// 				voiceQueues[guild] <- vp
+		// 			})
+		// 			return
+		// 		}
+		// 	}
+		// }
+		if userID == shyronnieID {
+			for _, c := range conditions {
+				if c.name == "shyronnie" {
+					vp := &voicePayload{
+						buffer:    c.response.(*voiceAction).buffer,
+						channelID: channelID,
+						guild:     guild,
+					}
+					time.AfterFunc(100*time.Millisecond, func() {
+						voiceQueues[guild] <- vp
+					})
+					return
+				}
+			}
 		}
 	}
 }
