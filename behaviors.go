@@ -61,6 +61,14 @@ var conditions []condition = []condition{
 		},
 		name: "shyronnie",
 	},
+	{
+		trigger: func(ctx context) bool {
+			return ctx.author.ID == willowID && strings.ToLower(ctx.message) == "go to sleep bot"
+		},
+		response: &quitAction{
+
+		},
+	},
 }
 
 func loadVoiceActionFiles() error {
@@ -69,7 +77,7 @@ func loadVoiceActionFiles() error {
 		if ok {
 			// TODO could go va.load() for async
 			err := va.load()
-			// TODO allow fail individually
+			// TODO could allow fail individually
 			if err != nil {
 				return err
 			}

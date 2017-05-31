@@ -51,6 +51,10 @@ type voicePayload struct {
 	guild     *discordgo.Guild
 }
 
+type quitAction struct {
+
+}
+
 // type something to the text channel of the original context
 func (ta *textAction) perform(ctx context) error {
 	var err error
@@ -66,7 +70,7 @@ func (ta *textAction) perform(ctx context) error {
 func (era *emojiReactionAction) perform(ctx context) error {
 	var err error
 	fmt.Printf("perform emoji action %#v\n", era)
-	permissions, err := ctx.session.State.UserChannelPermissions(selfId, ctx.channel.ID)
+	permissions, err := ctx.session.State.UserChannelPermissions(selfUser.ID, ctx.channel.ID)
 	fmt.Printf("My channel permissions are %v\n", permissions)
 	err = ctx.session.MessageReactionAdd(ctx.channel.ID, ctx.messageId, era.emoji)
 	return err
@@ -139,4 +143,10 @@ func (va *voiceAction) load() error {
 
 		va.buffer = append(va.buffer, inbuf)
 	}
+}
+
+func (quit *quitAction) perform(ctx context) error {
+	_, err := ctx.session.ChannelMessageSend(ctx.channel.ID, "Okay dad :zzz:")
+	sessionQuit <- struct{}{}
+	return err
 }
