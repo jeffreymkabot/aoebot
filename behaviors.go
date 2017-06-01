@@ -66,7 +66,7 @@ var conditions []condition = []condition{
 			return ctx.author.ID == willowID && strings.ToLower(ctx.message) == "go to sleep bot"
 		},
 		response: &quitAction{
-
+			content: "Okay dad :zzz:",
 		},
 	},
 }
