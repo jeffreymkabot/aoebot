@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	// "strings"
 	"time"
 )
 
@@ -15,8 +16,9 @@ type bot struct {
 	session    *discordgo.Session
 	self       *discordgo.User
 	quit       chan struct{}
-	voiceboxes map[string]*voicebox
-	occupancy  map[string]string
+	voiceboxes map[string]*voicebox // TODO voiceboxes is vulnerable to concurrent read/write
+	occupancy  map[string]string    // TODO occupancy is vulnerable to concurrent read/write
+	aesthetic  bool
 }
 
 type voicebox struct {
@@ -66,7 +68,7 @@ func (b *bot) sleep() {
 // voicePayloads provide data meant for a voice channel in a discord guild
 // we can remain connected to the same channel while we process a relatively contiguous stream of voicePayloads
 // for that channel
-func (b *bot) speakTo(g *discordgo.Guild) {
+func (b *bot) speakTo(g *discordgo.Guild) *voicebox {
 	var vc *discordgo.VoiceConnection
 	var err error
 
@@ -79,17 +81,17 @@ func (b *bot) speakTo(g *discordgo.Guild) {
 	// need to use closures so they can manipulate same VoiceConnection vc used in speakTo()
 	disconnect := func() {
 		if vc != nil {
-			log.Printf("Disconnect voice in guild: %v", g.ID)
+			log.Printf("Disconnect voice in guild %v %v", g.Name, g.ID)
 			_ = vc.Speaking(false)
 			_ = vc.Disconnect()
 			vc = nil
 		}
 	}
 	goAfk := func() {
-		log.Printf("Join afk channel: %v", g.AfkChannelID)
+		log.Printf("Join afk channel %v in guild %v %v", g.AfkChannelID, g.Name, g.ID)
 		vc, err = b.session.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
 		if err != nil {
-			log.Printf("Error join afk: %#v\n", err)
+			log.Printf("Error join afk: %#v", err)
 			disconnect()
 		} else {
 			dcTimer = time.AfterFunc(5*time.Minute, disconnect)
@@ -98,10 +100,6 @@ func (b *bot) speakTo(g *discordgo.Guild) {
 	defer goAfk()
 	queue := make(chan *voicePayload)
 	quit := make(chan struct{})
-	b.voiceboxes[g.ID] = &voicebox{
-		queue: queue,
-		quit:  quit,
-	}
 
 	go func() {
 		for {
@@ -113,7 +111,7 @@ func (b *bot) speakTo(g *discordgo.Guild) {
 				if dcTimer != nil {
 					dcTimer.Stop()
 				}
-				log.Printf("Speak\n")
+				log.Printf("Speak to channel %v in guild %v %v", vp.channelID, g.Name, g.ID)
 				vc, err = b.session.ChannelVoiceJoin(g.ID, vp.channelID, false, true)
 				if err != nil {
 					log.Printf("Error join channel: %#v\n", err)
@@ -134,12 +132,17 @@ func (b *bot) speakTo(g *discordgo.Guild) {
 				if dcTimer != nil {
 					dcTimer.Stop()
 				}
-				log.Printf("Quit voice in guild: %v", g.ID)
+				log.Printf("Quit voice in guild %v %v", g.Name, g.ID)
 				disconnect()
 				return
 			}
 		}
 	}()
+
+	return &voicebox{
+		queue: queue,
+		quit:  quit,
+	}
 }
 
 // associate a response to trigger
@@ -182,7 +185,7 @@ type voiceAction struct {
 type voicePayload struct {
 	buffer    [][]byte
 	channelID string
-	guild     *discordgo.Guild
+	// guild     *discordgo.Guild
 }
 
 type quitAction struct {
@@ -221,7 +224,7 @@ func (va *voiceAction) perform(ctx context) error {
 	me.voiceboxes[ctx.guild.ID].queue <- &voicePayload{
 		buffer:    va.buffer,
 		channelID: vcId,
-		guild:     ctx.guild,
+		// guild:     ctx.guild,
 	}
 	return nil
 }
@@ -280,7 +283,11 @@ func (va *voiceAction) load() error {
 }
 
 func (quit *quitAction) perform(ctx context) error {
-	_, err := ctx.session.ChannelMessageSend(ctx.channel.ID, quit.content)
+	// _, err := ctx.session.ChannelMessageSend(ctx.channel.ID, quit.content)
+	err := (&textAction{
+		content: quit.content,
+		tts:     false,
+	}).perform(ctx)
 	me.quit <- struct{}{}
 	return err
 }

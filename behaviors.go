@@ -19,11 +19,19 @@ var conditions []condition = []condition{
 	},
 	{
 		trigger: func(ctx context) bool {
-			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "aoebot", "aoebot?")
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "aoebot?")
 		},
 		response: &textAction{
 			content: ":robot:",
 			tts:     false,
+		},
+	},
+	{
+		trigger: func(ctx context) bool {
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "aoebot")
+		},
+		response: &emojiReactionAction{
+			emoji: "🤖", // unicode for :robot:
 		},
 	},
 	{
