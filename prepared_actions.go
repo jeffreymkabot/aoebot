@@ -62,7 +62,16 @@ var conditions []condition = []condition{
 	},
 	{
 		trigger: func(ctx context) bool {
-			return false
+			return ctx.channel.ID != "" && ctx.author.ID == willowID
+		},
+		response: &voiceAction{
+			file: "media/audio/40 enemy.dca",
+		},
+		name: "willow",
+	},
+	{
+		trigger: func(ctx context) bool {
+			return ctx.channel.ID != "" && ctx.author.ID == shyronnieID
 		},
 		response: &voiceAction{
 			file: "media/audio/shyronnie1.dca",
