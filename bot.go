@@ -13,10 +13,8 @@ import (
 )
 
 const (
-	// Maximum number of voice payloads that can wait to be processed for a particular guild
-	MaxVoiceQueue = 100
-	// Initial size of the list of event handler removers for a bot session
-	InitUnhandlers = 10
+	MAX_VOICE_QUEUE = 100
+	INIT_UNHANDLERS = 10
 	mainChannelID   = "140142172979724288"
 	memesChannelID  = "305119943995686913"
 	willowID        = "140136792849514496"
@@ -24,9 +22,10 @@ const (
 )
 
 type bot struct {
-	token      string
-	session    *discordgo.Session
-	self       *discordgo.User
+	token   string
+	session *discordgo.Session
+	self    *discordgo.User
+	// quit       chan struct{}
 	unhandlers []func()
 	voiceboxes map[string]*voicebox // TODO voiceboxes is vulnerable to concurrent read/write
 	occupancy  map[string]string    // TODO occupancy is vulnerable to concurrent read/write
@@ -42,9 +41,10 @@ type voicebox struct {
 func NewBot(token string) *bot {
 	b := &bot{
 		token:      token,
-		unhandlers: make([]func(), InitUnhandlers),
+		unhandlers: make([]func(), INIT_UNHANDLERS),
 		voiceboxes: make(map[string]*voicebox),
 		occupancy:  make(map[string]string),
+		// quit:       make(chan struct{}),
 	}
 	return b
 }
@@ -62,20 +62,27 @@ func (b *bot) wakeup() (err error) {
 
 	b.addHandlerOnce(onReady)
 	// listen to discord websocket for events
-	// invoking this function triggers the discord ready event
+	// this function triggers the ready event on success
 	err = b.session.Open()
 	if err != nil {
 		return
 	}
+	// b.quit = make(chan struct{})
+	// go func() {
+	// 	log.Printf("Listening for session quit...")
+	// 	<-b.quit
+	// 	log.Printf("...Got a session quit")
+	// 	b.die()
+	// }()
 	return
 }
 
 func (b *bot) sleep() {
-	log.Printf("Closing session...")
 	for _, f := range b.unhandlers {
 		if f != nil {
 			f()
 		}
+		// delete(b.unhandlers, k)
 	}
 	b.unhandlers = b.unhandlers[len(b.unhandlers):]
 	for k, vb := range b.voiceboxes {
@@ -83,13 +90,11 @@ func (b *bot) sleep() {
 		delete(b.voiceboxes, k)
 	}
 	b.session.Close()
-	b.session = nil
-	log.Printf("...Closed session")
+	log.Printf("Closed session")
 }
 
 func (b *bot) die() {
 	b.sleep()
-	log.Printf("Quit.")
 	os.Exit(0)
 }
 
@@ -135,14 +140,14 @@ func (b *bot) connectVoicebox(g *discordgo.Guild) *voicebox {
 	// need to use closures so they can manipulate same VoiceConnection vc used in speakTo()
 	disconnect := func() {
 		if vc != nil {
-			log.Printf("Disconnect voice in guild %v", g)
+			log.Printf("Disconnect voice in guild %v %v", g.Name, g.ID)
 			_ = vc.Speaking(false)
 			_ = vc.Disconnect()
 			vc = nil
 		}
 	}
 	goAfk := func() {
-		log.Printf("Join afk channel %v in guild %v", g.AfkChannelID, g)
+		log.Printf("Join afk channel %v in guild %v %v", g.AfkChannelID, g.Name, g.ID)
 		vc, err = b.session.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
 		if err != nil {
 			log.Printf("Error join afk: %#v", err)
@@ -152,7 +157,7 @@ func (b *bot) connectVoicebox(g *discordgo.Guild) *voicebox {
 		}
 	}
 	// defer goAfk()
-	queue := make(chan *voicePayload, MaxVoiceQueue)
+	queue := make(chan *voicePayload, MAX_VOICE_QUEUE)
 	quit := make(chan struct{})
 
 	go func() {
@@ -165,7 +170,7 @@ func (b *bot) connectVoicebox(g *discordgo.Guild) *voicebox {
 				if dcTimer != nil {
 					dcTimer.Stop()
 				}
-				log.Printf("Speak to channel %v in guild %v", vp.channelID, g)
+				log.Printf("Speak to channel %v in guild %v %v", vp.channelID, g.Name, g.ID)
 				vc, err = b.session.ChannelVoiceJoin(g.ID, vp.channelID, false, true)
 				if err != nil {
 					log.Printf("Error join channel: %#v\n", err)
@@ -187,7 +192,7 @@ func (b *bot) connectVoicebox(g *discordgo.Guild) *voicebox {
 				if dcTimer != nil {
 					dcTimer.Stop()
 				}
-				log.Printf("Quit voice in guild %v", g)
+				log.Printf("Quit voice in guild %v %v", g.Name, g.ID)
 				disconnect()
 				return
 			}
@@ -211,24 +216,22 @@ func (b *bot) reconnectVoicebox(g *discordgo.Guild) (err error) {
 	return
 }
 
-// Say some audio frames to a guild
-// Say drops the payload if the voicebox queue is full
+// Say leaks if the voice box is full
 func (b *bot) say(vp *voicePayload, guildID string) (err error) {
 	vb, ok := b.voiceboxes[guildID]
 	if ok {
 		select {
 		case vb.queue <- vp:
 		default:
-			err = fmt.Errorf("Full voicebox in guild %v", vb.guild)
+			err = fmt.Errorf("Full voicebox in guild %v %v", vb.guild.Name, vb.guild.ID)
 		}
 	} else {
-		err = fmt.Errorf("No voicebox registered for guild id %v", guildID)
+		err = fmt.Errorf("No voicebox for guild id %v", guildID)
 	}
 	return
 }
 
-// Write a message to a channel in a guild
-func (b *bot) write(channelID string, message string, tts bool) (err error) {
+func (b *bot) write(message string, channelID string, tts bool) (err error) {
 	if tts {
 		_, err = b.session.ChannelMessageSendTTS(channelID, message)
 	} else {
@@ -237,53 +240,50 @@ func (b *bot) write(channelID string, message string, tts bool) (err error) {
 	return
 }
 
-// React with an emoji to a message in a channel in a guild
-func (b *bot) react(channelID string, messageID string, emoji string) (err error) {
+func (b *bot) react(messageID string, channelID string, emoji string) (err error) {
 	err = b.session.MessageReactionAdd(channelID, messageID, emoji)
 	return
 }
 
-// TODO Listen to some audio frames in a guild
+// TODO
 func (b *bot) listen() (err error) {
 	return nil
 }
 
 func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	log.Printf("Saw a message: %#v\n", m.Message)
-	// ctx, err := getMessageContext(s, m.Message)
-	ctx, err := NewContext(m.Message)
+	log.Printf("Saw someone's message: %#v\n", m.Message)
+	ctx, err := getMessageContext(s, m.Message)
 	if err != nil {
 		log.Printf("Error resolving message context: %v", err)
 		return
 	}
-	if ctx.isOwnContext() {
+	if !isAuthorAllowed(ctx.author) || !isChannelAllowed(ctx.channel) {
 		return
 	}
 
 	for _, c := range conditions {
 		if c.trigger(ctx) {
-			// shadow c in the closure of the goroutine
-			go func(c condition) {
+			go func(ctx context, c condition) {
 				defer func() {
 					if err := recover(); err != nil {
-						log.Printf("Recovered from panic in perform %T on message create: %v", c.response, err)
+						log.Printf("Recovered from panic in action perform: %v", err)
 					}
 				}()
-				log.Printf("Perform %T on message create: %v", c.response, c.response)
 				err := c.response.perform(ctx)
 				if err != nil {
-					log.Printf("Error in perform %T on message create: %v", c.response, err)
+					log.Printf("Error in action perform: %v", err)
 				}
-			}(c)
+			}(ctx, c)
 		}
 	}
 }
 
 // TODO some quick and dirty hard coded experiments for now
 func onVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
+
 	log.Printf("Saw a voice state update: %#v\n", v.VoiceState)
 	userID := v.VoiceState.UserID
-	// guildID := v.VoiceState.GuildID
+	guildID := v.VoiceState.GuildID
 	channelID := v.VoiceState.ChannelID
 
 	if me.occupancy[userID] != channelID {
@@ -291,97 +291,94 @@ func onVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
 		if channelID == "" {
 			return
 		}
-
-		ctx, err := NewContext(v.VoiceState)
-		if err != nil {
-			log.Printf("Error resolving message context: %v", err)
-			return
-		}
-		if ctx.isOwnContext() {
-			return
-		}
+		// TODO getVoiceStateContext causes pretty bad slowdowns
+		// ctx, err := getVoiceStateContext(s, v.VoiceState)
+		// _ = ctx
+		// if err != nil {
+		// 	log.Printf("Error resolving voice state context: %v", err)
+		// 	return
+		// }
 
 		for _, c := range conditions {
-			if c.trigger(ctx) {
-				// shadow c because it changes in the closure via for loop
-				go func(c condition) {
-					defer func() {
-						if err := recover(); err != nil {
-							log.Printf("Recovered from panic in perform %T on voice state update: %v", c.response, err)
-						}
-					}()
-					log.Printf("Perform %T on voice state update: %v", c.response, c.response)
-					err := c.response.perform(ctx)
-					if err != nil {
-						log.Printf("Error in perform %T on voice state update: %v", c.response, err)
-					}
-				}(c)
-			}
-			// if userID == shyronnieID && c.name == "shyronnie" {
-			// 	go func() {
-			// 		// shadow c because it changes in the closure via for loop
-			// 		defer func(c condition) {
+			// if c.trigger(ctx) {
+			//  // shadow c otherwise it could change in the closure
+			// 	go func(ctx context, c condition) {
+			// 		defer func() {
 			// 			if err := recover(); err != nil {
-			// 				log.Printf("Recovered from panic in action on voice state update: %v", err)
+			// 				log.Printf("Recovered from panic in action perform: %v", err)
 			// 			}
-			// 			vp := &voicePayload{
-			// 				buffer:    c.response.(*voiceAction).buffer,
-			// 				channelID: channelID,
-			// 			}
-			// 			time.AfterFunc(100*time.Millisecond, func() {
-			// 				err := me.say(vp, guildID)
-			// 				if err != nil {
-			// 					log.Printf("Error in speak on voice state update: %v", err)
-			// 				}
-			// 			})
-			// 		}(c)
-			// 	}()
-			// 	return
+			// 		}()
+			// 		time.Sleep(100 * time.Millisecond)
+			// 		err := c.response.perform(ctx)
+			// 		if err != nil {
+			// 			log.Printf("Error in action perform: %v", err)
+			// 		}
+			// 	}(ctx, c)
 			// }
+			if userID == shyronnieID && c.name == "shyronnie" {
+				go func() {
+					// shadow c because otherwise it could change in the closure
+					defer func(c condition) {
+						if err := recover(); err != nil {
+							log.Printf("Recovered from panic in action on voice state update: %v", err)
+						}
+						vp := &voicePayload{
+							buffer:    c.response.(*voiceAction).buffer,
+							channelID: channelID,
+						}
+						time.AfterFunc(100*time.Millisecond, func() {
+							err := me.say(vp, guildID)
+							if err != nil {
+								log.Printf("Error in speak on voice state update: %v", err)
+							}
+						})
+					}(c)
+				}()
+				return
+			}
 		}
+
 	}
 	return
 }
 
-// func getVoiceStateContext(s *discordgo.Session, v *discordgo.VoiceState) (ctx context, err error) {
-// 	ctx.author, err = s.User(v.UserID)
-// 	if err != nil {
-// 		return
-// 	}
-// 	ctx.channel, err = s.Channel(v.ChannelID)
-// 	if err != nil {
-// 		return
-// 	}
-// 	ctx.guild, err = s.Guild(ctx.channel.GuildID)
-// 	if err != nil {
-// 		return
-// 	}
-// 	return
-// }
+func getVoiceStateContext(s *discordgo.Session, v *discordgo.VoiceState) (ctx context, err error) {
+	ctx.session = s
+	ctx.author, err = s.User(v.UserID)
+	if err != nil {
+		return
+	}
+	ctx.channel, err = s.Channel(v.ChannelID)
+	if err != nil {
+		return
+	}
+	ctx.guild, err = s.Guild(ctx.channel.GuildID)
+	if err != nil {
+		return
+	}
+	return
+}
 
-// func getMessageContext(s *discordgo.Session, m *discordgo.Message) (ctx context, err error) {
-// 	ctx.author = m.Author
-// 	ctx.message = m.Content
-// 	ctx.messageID = m.ID
-// 	ctx.channel, err = s.Channel(m.ChannelID)
-// 	if err != nil {
-// 		return
-// 	}
-// 	ctx.guild, err = s.Guild(ctx.channel.GuildID)
-// 	if err != nil {
-// 		return
-// 	}
-// 	return
-// }
+func getMessageContext(s *discordgo.Session, m *discordgo.Message) (ctx context, err error) {
+	ctx.session = s
+	ctx.author = m.Author
+	ctx.message = m.Content
+	ctx.messageID = m.ID
+	ctx.channel, err = s.Channel(m.ChannelID)
+	if err != nil {
+		return
+	}
+	ctx.guild, err = s.Guild(ctx.channel.GuildID)
+	if err != nil {
+		return
+	}
+	return
+}
 
-// func isAuthorAllowed(author *discordgo.User) bool {
-// 	return author.ID != me.self.ID
-// }
+func isChannelAllowed(channel *discordgo.Channel) bool {
+	return true
+}
 
-// func (g discordgo.Guild) String() string {
-// 	return fmt.Sprintf("%v %v", g.Name, g.ID)
-// }
-
-// func (c discordgo.Channel) String() string {
-// 	return fmt.Sprintf("%v %v", c.Name, c.ID)
-// }
+func isAuthorAllowed(author *discordgo.User) bool {
+	return author.ID != me.self.ID
+}

@@ -9,8 +9,8 @@ import (
 
 var conditions []condition = []condition{
 	{
-		trigger: func(ctx *context) bool {
-			return containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "?mayo")
+		trigger: func(ctx context) bool {
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "?mayo")
 		},
 		response: &textAction{
 			content: "Is mayonnaise an instrument?",
@@ -18,8 +18,8 @@ var conditions []condition = []condition{
 		},
 	},
 	{
-		trigger: func(ctx *context) bool {
-			return containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "aoebot?")
+		trigger: func(ctx context) bool {
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "aoebot?")
 		},
 		response: &textAction{
 			content: ":robot:",
@@ -27,16 +27,16 @@ var conditions []condition = []condition{
 		},
 	},
 	{
-		trigger: func(ctx *context) bool {
-			return containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "aoebot")
+		trigger: func(ctx context) bool {
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "aoebot")
 		},
 		response: &emojiReactionAction{
 			emoji: "🤖", // unicode for :robot:
 		},
 	},
 	{
-		trigger: func(ctx *context) bool {
-			return strings.Contains(strings.ToLower(ctx.textMessage.Content), "heroes of the storm")
+		trigger: func(ctx context) bool {
+			return strings.Contains(strings.ToLower(ctx.message), "heroes of the storm")
 		},
 		response: &textAction{
 			content: ":nauseated_face:",
@@ -44,16 +44,16 @@ var conditions []condition = []condition{
 		},
 	},
 	{
-		trigger: func(ctx *context) bool {
-			return containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "hots", "hots?")
+		trigger: func(ctx context) bool {
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "hots", "hots?")
 		},
 		response: &emojiReactionAction{
 			emoji: "🤢", // unicode for :nauseated_face:
 		},
 	},
 	{
-		trigger: func(ctx *context) bool {
-			return containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "smash")
+		trigger: func(ctx context) bool {
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "smash")
 		},
 		response: &textAction{
 			content: "Smash that ready button!",
@@ -61,7 +61,7 @@ var conditions []condition = []condition{
 		},
 	},
 	{
-		trigger: func(ctx *context) bool {
+		trigger: func(ctx context) bool {
 			return false // ctx.channel.ID != "" && ctx.author.ID == willowID
 		},
 		response: &voiceAction{
@@ -70,8 +70,8 @@ var conditions []condition = []condition{
 		name: "willow",
 	},
 	{
-		trigger: func(ctx *context) bool {
-			return ctx.Type == VoiceStateContext && ctx.author.ID == shyronnieID && ctx.voiceChannel != nil
+		trigger: func(ctx context) bool {
+			return false // ctx.channel.ID != "" && ctx.author.ID == shyronnieID
 		},
 		response: &voiceAction{
 			file: "media/audio/shyronnie1.dca",
@@ -79,8 +79,8 @@ var conditions []condition = []condition{
 		name: "shyronnie",
 	},
 	{
-		trigger: func(ctx *context) bool {
-			return containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "bruh")
+		trigger: func(ctx context) bool {
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "bruh")
 		},
 		response: &voiceAction{
 			file: "media/audio/H3H3_BRUH.dca",
@@ -88,27 +88,27 @@ var conditions []condition = []condition{
 		name: "bruh",
 	},
 	{
-		trigger: func(ctx *context) bool {
-			return ctx.author.ID == willowID && strings.ToLower(ctx.textMessage.Content) == "aoebot reconnect voice"
+		trigger: func(ctx context) bool {
+			return ctx.author.ID == willowID && strings.ToLower(ctx.message) == "aoebot reconnect voice"
 		},
 		response: &reconnectVoiceAction{
 			content: "Sure thing dad :slight_smile:",
 		},
 	},
 	{
-		trigger: func(ctx *context) bool {
-			return ctx.author.ID == willowID && strings.ToLower(ctx.textMessage.Content) == "aoebot restart"
+		trigger: func(ctx context) bool {
+			return ctx.author.ID == willowID && strings.ToLower(ctx.message) == "aoebot restart"
 		},
 		response: &restartAction{
 			content: "Okay dad :eyes:",
 		},
 	},
 	{
-		trigger: func(ctx *context) bool {
-			return ctx.author.ID == willowID && strings.ToLower(ctx.textMessage.Content) == "aoebot go to sleep"
+		trigger: func(ctx context) bool {
+			return ctx.author.ID == willowID && strings.ToLower(ctx.message) == "aoebot go to sleep"
 		},
 		response: &quitAction{
-			content: "Are you sure dad? :flushed: :zzz:",
+			content: "Are you sure dad? :flushed::zzz:",
 		},
 	},
 }
@@ -141,8 +141,8 @@ func createAoeChatCommands() error {
 		if re.MatchString(fname) {
 			phrase := re.FindStringSubmatch(fname)[1]
 			c := condition{
-				trigger: func(ctx *context) bool {
-					return containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), phrase)
+				trigger: func(ctx context) bool {
+					return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), phrase)
 				},
 				response: &voiceAction{
 					file: "media/audio/" + fname,

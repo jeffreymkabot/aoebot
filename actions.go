@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/binary"
-	"fmt"
+	// "fmt"
 	"github.com/bwmarrin/discordgo"
 	"io"
-	// "log"
+	"log"
 	"os"
 	// "strings"
 	// "time"
@@ -14,69 +14,32 @@ import (
 // associate a response to trigger
 type condition struct {
 	// TODO isTriggeredBy better name?
-	trigger  func(ctx *context) bool
+	trigger  func(ctx context) bool
 	response action
 	name     string
 }
 
 // perform an action given the context (environment) of its trigger
 type action interface {
-	perform(ctx *context) error
+	perform(ctx context) error
 }
-
-const (
-	MessageContext = iota
-	VoiceStateContext
-)
 
 // TODO more generic to support capturing the context of more events
 type context struct {
-	guild        *discordgo.Guild
-	textChannel  *discordgo.Channel
-	textMessage  *discordgo.Message
-	voiceChannel *discordgo.Channel
-	author       *discordgo.User
-	Type int
+	session   *discordgo.Session
+	guild     *discordgo.Guild
+	channel   *discordgo.Channel
+	author    *discordgo.User
+	message   string
+	messageID string
 }
 
-func NewContext(seed interface{}) (ctx *context, err error) {
-	switch s := seed.(type) {
-	case *discordgo.Message:
-		ctx.Type = MessageContext
-		ctx.textMessage = s
-		ctx.author = s.Author
-		ctx.textChannel, err = me.session.State.Channel(s.ChannelID)
-		if err != nil {
-			return
-		}
-		ctx.guild, err = me.session.State.Guild(ctx.textChannel.GuildID)
-		if err != nil {
-			return
-		}
-	case *discordgo.VoiceState:
-		ctx.Type = VoiceStateContext
-		ctx.author, err = me.session.User(s.UserID)
-		if err != nil {
-			return
-		}
-		ctx.voiceChannel, err = me.session.State.Channel(s.ChannelID)
-		if err != nil {
-			return
-		}
-		ctx.guild, err = me.session.State.Guild(ctx.voiceChannel.GuildID)
-		if err != nil {
-			return
-		}
-	default:
-		err = fmt.Errorf("Unsupported type %T for context seed", s)
-		return
-	}
-	return
-}
-
-func (ctx context) isOwnContext() bool {
-	return ctx.author != nil && ctx.author.ID == me.self.ID
-}
+// type context struct {
+// 	*discordgo.Guild
+// 	*discordgo.Channel
+// 	*discordgo.Message
+// 	*discordgo.User
+// }
 
 type textAction struct {
 	content string
@@ -95,6 +58,7 @@ type voiceAction struct {
 type voicePayload struct {
 	buffer    [][]byte
 	channelID string
+	// guild     *discordgo.Guild
 }
 
 type reconnectVoiceAction struct {
@@ -110,40 +74,28 @@ type quitAction struct {
 }
 
 // type something to the text channel of the original context
-func (ta textAction) perform(ctx *context) (err error) {
-	err = me.write(ctx.textChannel.ID, ta.content, ta.tts)
+func (ta *textAction) perform(ctx context) (err error) {
+	log.Printf("perform text action %#v", ta)
+	err = me.write(ta.content, ctx.channel.ID, ta.tts)
 	return
 }
 
-func (ta textAction) String() string {
-	if ta.tts {
-		return fmt.Sprintf("/tts %v", ta.content)
-	} else {
-		return fmt.Sprintf("%v", ta.content)
-	}
-}
-
-func (era emojiReactionAction) perform(ctx *context) (err error) {
-	err = me.react(ctx.textChannel.ID, ctx.textMessage.ID, era.emoji)
+func (era *emojiReactionAction) perform(ctx context) (err error) {
+	log.Printf("perform emoji action %#v", era)
+	// permissions, err := ctx.session.State.UserChannelPermissions(selfUser.ID, ctx.channel.ID)
+	// fmt.Printf("My channel permissions are %v\n", permissions)
+	err = me.react(ctx.channel.ID, ctx.messageID, era.emoji)
 	return
-}
-
-func (era emojiReactionAction) String() string {
-	return fmt.Sprintf("%x", era.emoji)
 }
 
 // say something to the voice channel of the user in the original context
-func (va *voiceAction) perform(ctx *context) (err error) {
-	vcId := ""
-	if ctx.voiceChannel != nil {
-		vcId = ctx.voiceChannel.ID
-	} else {
-		vcId = getVoiceChannelIdByContext(ctx)
-	}
-
+func (va *voiceAction) perform(ctx context) (err error) {
+	vcId := getVoiceChannelIdByContext(ctx)
 	if vcId == "" {
+		//ctx.session.ChannelMessageSend(ctx.channel.ID, "You should be in a voice channel!")
 		return
 	}
+	log.Printf("perform voice action %#v", va.file)
 	vp := &voicePayload{
 		buffer:    va.buffer,
 		channelID: vcId,
@@ -152,7 +104,7 @@ func (va *voiceAction) perform(ctx *context) (err error) {
 	return
 }
 
-func getVoiceChannelIdByContext(ctx *context) string {
+func getVoiceChannelIdByContext(ctx context) string {
 	return getVoiceChannelIdByUser(ctx.guild, ctx.author)
 }
 
@@ -205,46 +157,41 @@ func (va *voiceAction) load() error {
 	}
 }
 
-func (va voiceAction) String() string {
-	return fmt.Sprintf("%v", va.file)
-}
-
-func (rva reconnectVoiceAction) perform(ctx *context) (err error) {
-	// log.Printf("perform reconnect voice action %#v", rva)
-	if rva.content != "" {
-		_ = me.write(rva.content, ctx.textChannel.ID, false)
+func (reconnect *reconnectVoiceAction) perform(ctx context) (err error) {
+	log.Printf("perform reconnect voice action %#v", reconnect)
+	if reconnect.content != "" {
+		err = (&textAction{
+			content: reconnect.content,
+			tts:     false,
+		}).perform(ctx)
 	}
 	me.reconnectVoicebox(ctx.guild)
 	return
 }
 
-func (rva reconnectVoiceAction) String() string {
-	return fmt.Sprintf("%v", rva.content)
-}
-
-func (ra restartAction) perform(ctx *context) (err error) {
-	// log.Printf("perform restart session action %#v", ra)
-	if ra.content != "" {
-		_ = me.write(ra.content, ctx.textChannel.ID, false)
+func (restart *restartAction) perform(ctx context) (err error) {
+	log.Printf("perform restart session action %#v", restart)
+	if restart.content != "" {
+		err = (&textAction{
+			content: restart.content,
+			tts:     false,
+		}).perform(ctx)
 	}
 	me.sleep()
 	me.wakeup()
 	return
 }
 
-func (ra restartAction) String() string {
-	return fmt.Sprintf("%v", ra.content)
-}
-
-func (qa quitAction) perform(ctx *context) (err error) {
-	// log.Printf("perform quit action %#v", qa)
-	if qa.content != "" {
-		_ = me.write(qa.content, ctx.textChannel.ID, false)
+func (quit *quitAction) perform(ctx context) (err error) {
+	log.Printf("perform quit action %#v", quit)
+	// _, err := ctx.session.ChannelMessageSend(ctx.channel.ID, quit.content)
+	if quit.content != "" {
+		err = (&textAction{
+			content: quit.content,
+			tts:     false,
+		}).perform(ctx)
 	}
+	// me.quit <- struct{}{}
 	me.die()
 	return
-}
-
-func (qa quitAction) String() string {
-	return fmt.Sprintf("%v", qa.content)
 }
