@@ -31,8 +31,15 @@ type context struct {
 	channel   *discordgo.Channel
 	author    *discordgo.User
 	message   string
-	messageId string
+	messageID string
 }
+
+// type context struct {
+// 	*discordgo.Guild
+// 	*discordgo.Channel
+// 	*discordgo.Message
+// 	*discordgo.User
+// }
 
 type textAction struct {
 	content string
@@ -54,6 +61,14 @@ type voicePayload struct {
 	// guild     *discordgo.Guild
 }
 
+type reconnectVoiceAction struct {
+	content string
+}
+
+type restartAction struct {
+	content string
+}
+
 type quitAction struct {
 	content string
 }
@@ -69,7 +84,7 @@ func (era *emojiReactionAction) perform(ctx context) (err error) {
 	log.Printf("perform emoji action %#v", era)
 	// permissions, err := ctx.session.State.UserChannelPermissions(selfUser.ID, ctx.channel.ID)
 	// fmt.Printf("My channel permissions are %v\n", permissions)
-	err = ctx.session.MessageReactionAdd(ctx.channel.ID, ctx.messageId, era.emoji)
+	err = me.react(ctx.channel.ID, ctx.messageID, era.emoji)
 	return
 }
 
@@ -142,12 +157,41 @@ func (va *voiceAction) load() error {
 	}
 }
 
+func (reconnect *reconnectVoiceAction) perform(ctx context) (err error) {
+	log.Printf("perform reconnect voice action %#v", reconnect)
+	if reconnect.content != "" {
+		err = (&textAction{
+			content: reconnect.content,
+			tts:     false,
+		}).perform(ctx)
+	}
+	me.reconnectVoicebox(ctx.guild)
+	return
+}
+
+func (restart *restartAction) perform(ctx context) (err error) {
+	log.Printf("perform restart session action %#v", restart)
+	if restart.content != "" {
+		err = (&textAction{
+			content: restart.content,
+			tts:     false,
+		}).perform(ctx)
+	}
+	me.sleep()
+	me.wakeup()
+	return
+}
+
 func (quit *quitAction) perform(ctx context) (err error) {
+	log.Printf("perform quit action %#v", quit)
 	// _, err := ctx.session.ChannelMessageSend(ctx.channel.ID, quit.content)
-	err = (&textAction{
-		content: quit.content,
-		tts:     false,
-	}).perform(ctx)
-	me.quit <- struct{}{}
+	if quit.content != "" {
+		err = (&textAction{
+			content: quit.content,
+			tts:     false,
+		}).perform(ctx)
+	}
+	// me.quit <- struct{}{}
+	me.die()
 	return
 }

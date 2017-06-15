@@ -11,7 +11,7 @@ import (
 	"os/signal"
 )
 
-var me bot
+var me *bot
 
 func prepare() (err error) {
 	// dynamically bind some voice actions
@@ -46,15 +46,13 @@ func main() {
 		log.Fatalf("Error in prepare: %#v\n", err)
 	}
 
-	me = bot{
-		token: token,
-	}
+	me = NewBot(token)
 
 	err = me.wakeup()
 	if err != nil {
 		log.Fatalf("Error in wakeup: %#v\n", err)
 	}
-	defer me.sleep()
+	defer me.die()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill)

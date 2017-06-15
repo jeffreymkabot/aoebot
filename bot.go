@@ -14,6 +14,7 @@ import (
 
 const (
 	MAX_VOICE_QUEUE = 100
+	INIT_UNHANDLERS = 10
 	mainChannelID   = "140142172979724288"
 	memesChannelID  = "305119943995686913"
 	willowID        = "140136792849514496"
@@ -21,10 +22,11 @@ const (
 )
 
 type bot struct {
-	token      string
-	session    *discordgo.Session
-	self       *discordgo.User
-	quit       chan struct{}
+	token   string
+	session *discordgo.Session
+	self    *discordgo.User
+	// quit       chan struct{}
+	unhandlers []func()
 	voiceboxes map[string]*voicebox // TODO voiceboxes is vulnerable to concurrent read/write
 	occupancy  map[string]string    // TODO occupancy is vulnerable to concurrent read/write
 	aesthetic  bool
@@ -34,6 +36,17 @@ type voicebox struct {
 	guild *discordgo.Guild
 	queue chan<- *voicePayload
 	quit  chan<- struct{}
+}
+
+func NewBot(token string) *bot {
+	b := &bot{
+		token:      token,
+		unhandlers: make([]func(), INIT_UNHANDLERS),
+		voiceboxes: make(map[string]*voicebox),
+		occupancy:  make(map[string]string),
+		// quit:       make(chan struct{}),
+	}
+	return b
 }
 
 func (b *bot) wakeup() (err error) {
@@ -47,30 +60,66 @@ func (b *bot) wakeup() (err error) {
 		return
 	}
 
-	b.session.AddHandler(onReady)
+	b.addHandlerOnce(onReady)
 	// listen to discord websocket for events
 	// this function triggers the ready event on success
 	err = b.session.Open()
 	if err != nil {
 		return
 	}
-	b.quit = make(chan struct{})
-	go func() {
-		log.Printf("Listening for session quit...")
-		<-b.quit
-		log.Printf("...Got a session quit")
-		b.sleep()
-	}()
+	// b.quit = make(chan struct{})
+	// go func() {
+	// 	log.Printf("Listening for session quit...")
+	// 	<-b.quit
+	// 	log.Printf("...Got a session quit")
+	// 	b.die()
+	// }()
 	return
 }
 
 func (b *bot) sleep() {
-	for _, vb := range b.voiceboxes {
+	for _, f := range b.unhandlers {
+		if f != nil {
+			f()
+		}
+		// delete(b.unhandlers, k)
+	}
+	b.unhandlers = b.unhandlers[len(b.unhandlers):]
+	for k, vb := range b.voiceboxes {
 		vb.quit <- struct{}{}
+		delete(b.voiceboxes, k)
 	}
 	b.session.Close()
 	log.Printf("Closed session")
+}
+
+func (b *bot) die() {
+	b.sleep()
 	os.Exit(0)
+}
+
+func (b *bot) addHandler(handler interface{}) {
+	unhandler := b.session.AddHandler(handler)
+	b.unhandlers = append(b.unhandlers, unhandler)
+}
+
+func (b *bot) addHandlerOnce(handler interface{}) {
+	unhandler := b.session.AddHandlerOnce(handler)
+	b.unhandlers = append(b.unhandlers, unhandler)
+}
+
+func onReady(s *discordgo.Session, r *discordgo.Ready) {
+	log.Printf("Ready: %#v\n", r)
+	time.Sleep(100 * time.Millisecond)
+	for _, g := range r.Guilds {
+		// exec independent per each guild g
+		me.voiceboxes[g.ID] = me.connectVoicebox(g)
+		for _, vs := range g.VoiceStates {
+			me.occupancy[vs.UserID] = vs.ChannelID
+		}
+	}
+	me.addHandler(onMessageCreate)
+	me.addHandler(onVoiceStateUpdate)
 }
 
 // dispatch voice data to a particular discord guild
@@ -104,10 +153,10 @@ func (b *bot) connectVoicebox(g *discordgo.Guild) *voicebox {
 			log.Printf("Error join afk: %#v", err)
 			disconnect()
 		} else {
-			dcTimer = time.AfterFunc(5*time.Minute, disconnect)
+			dcTimer = time.AfterFunc(1*time.Minute, disconnect)
 		}
 	}
-	defer goAfk()
+	// defer goAfk()
 	queue := make(chan *voicePayload, MAX_VOICE_QUEUE)
 	quit := make(chan struct{})
 
@@ -125,6 +174,7 @@ func (b *bot) connectVoicebox(g *discordgo.Guild) *voicebox {
 				vc, err = b.session.ChannelVoiceJoin(g.ID, vp.channelID, false, true)
 				if err != nil {
 					log.Printf("Error join channel: %#v\n", err)
+					afkTimer = time.AfterFunc(300*time.Millisecond, goAfk)
 					break
 				}
 				_ = vc.Speaking(true)
@@ -156,6 +206,16 @@ func (b *bot) connectVoicebox(g *discordgo.Guild) *voicebox {
 	}
 }
 
+func (b *bot) reconnectVoicebox(g *discordgo.Guild) (err error) {
+	// TODO synchronize connect with end of quit
+	vb, ok := b.voiceboxes[g.ID]
+	if ok {
+		vb.quit <- struct{}{}
+	}
+	b.voiceboxes[g.ID] = b.connectVoicebox(g)
+	return
+}
+
 // Say leaks if the voice box is full
 func (b *bot) say(vp *voicePayload, guildID string) (err error) {
 	vb, ok := b.voiceboxes[guildID]
@@ -180,20 +240,14 @@ func (b *bot) write(message string, channelID string, tts bool) (err error) {
 	return
 }
 
-func onReady(s *discordgo.Session, r *discordgo.Ready) {
-	log.Printf("Ready: %#v\n", r)
-	me.voiceboxes = make(map[string]*voicebox)
-	me.occupancy = make(map[string]string)
-	time.Sleep(100 * time.Millisecond)
-	for _, g := range r.Guilds {
-		// exec independent per each guild g
-		me.voiceboxes[g.ID] = me.connectVoicebox(g)
-		for _, vs := range g.VoiceStates {
-			me.occupancy[vs.UserID] = vs.ChannelID
-		}
-	}
-	s.AddHandler(onMessageCreate)
-	s.AddHandler(onVoiceStateUpdate)
+func (b *bot) react(messageID string, channelID string, emoji string) (err error) {
+	err = b.session.MessageReactionAdd(channelID, messageID, emoji)
+	return
+}
+
+// TODO
+func (b *bot) listen() (err error) {
+	return nil
 }
 
 func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -309,7 +363,7 @@ func getMessageContext(s *discordgo.Session, m *discordgo.Message) (ctx context,
 	ctx.session = s
 	ctx.author = m.Author
 	ctx.message = m.Content
-	ctx.messageId = m.ID
+	ctx.messageID = m.ID
 	ctx.channel, err = s.Channel(m.ChannelID)
 	if err != nil {
 		return

@@ -62,7 +62,7 @@ var conditions []condition = []condition{
 	},
 	{
 		trigger: func(ctx context) bool {
-			return ctx.channel.ID != "" && ctx.author.ID == willowID
+			return false // ctx.channel.ID != "" && ctx.author.ID == willowID
 		},
 		response: &voiceAction{
 			file: "media/audio/40 enemy.dca",
@@ -71,7 +71,7 @@ var conditions []condition = []condition{
 	},
 	{
 		trigger: func(ctx context) bool {
-			return ctx.channel.ID != "" && ctx.author.ID == shyronnieID
+			return false // ctx.channel.ID != "" && ctx.author.ID == shyronnieID
 		},
 		response: &voiceAction{
 			file: "media/audio/shyronnie1.dca",
@@ -80,10 +80,35 @@ var conditions []condition = []condition{
 	},
 	{
 		trigger: func(ctx context) bool {
-			return ctx.author.ID == willowID && strings.ToLower(ctx.message) == "go to sleep bot"
+			return containsKeyword(strings.Split(strings.ToLower(ctx.message), " "), "bruh")
+		},
+		response: &voiceAction{
+			file: "media/audio/H3H3_BRUH.dca",
+		},
+		name: "bruh",
+	},
+	{
+		trigger: func(ctx context) bool {
+			return ctx.author.ID == willowID && strings.ToLower(ctx.message) == "aoebot reconnect voice"
+		},
+		response: &reconnectVoiceAction{
+			content: "Sure thing dad :slight_smile:",
+		},
+	},
+	{
+		trigger: func(ctx context) bool {
+			return ctx.author.ID == willowID && strings.ToLower(ctx.message) == "aoebot restart"
+		},
+		response: &restartAction{
+			content: "Okay dad :eyes:",
+		},
+	},
+	{
+		trigger: func(ctx context) bool {
+			return ctx.author.ID == willowID && strings.ToLower(ctx.message) == "aoebot go to sleep"
 		},
 		response: &quitAction{
-			content: "Okay dad :zzz:",
+			content: "Are you sure dad? :flushed::zzz:",
 		},
 	},
 }
