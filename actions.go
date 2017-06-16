@@ -36,10 +36,11 @@ type context struct {
 	textMessage  *discordgo.Message
 	voiceChannel *discordgo.Channel
 	author       *discordgo.User
-	Type int
+	Type         int
 }
 
 func NewContext(seed interface{}) (ctx *context, err error) {
+	ctx = &context{}
 	switch s := seed.(type) {
 	case *discordgo.Message:
 		ctx.Type = MessageContext
@@ -212,7 +213,7 @@ func (va voiceAction) String() string {
 func (rva reconnectVoiceAction) perform(ctx *context) (err error) {
 	// log.Printf("perform reconnect voice action %#v", rva)
 	if rva.content != "" {
-		_ = me.write(rva.content, ctx.textChannel.ID, false)
+		_ = me.write(ctx.textChannel.ID, rva.content, false)
 	}
 	me.reconnectVoicebox(ctx.guild)
 	return
@@ -225,7 +226,7 @@ func (rva reconnectVoiceAction) String() string {
 func (ra restartAction) perform(ctx *context) (err error) {
 	// log.Printf("perform restart session action %#v", ra)
 	if ra.content != "" {
-		_ = me.write(ra.content, ctx.textChannel.ID, false)
+		_ = me.write(ctx.textChannel.ID, ra.content, false)
 	}
 	me.sleep()
 	me.wakeup()
@@ -239,7 +240,7 @@ func (ra restartAction) String() string {
 func (qa quitAction) perform(ctx *context) (err error) {
 	// log.Printf("perform quit action %#v", qa)
 	if qa.content != "" {
-		_ = me.write(qa.content, ctx.textChannel.ID, false)
+		_ = me.write(ctx.textChannel.ID, qa.content, false)
 	}
 	me.die()
 	return

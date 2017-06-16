@@ -17,10 +17,10 @@ const (
 	MaxVoiceQueue = 100
 	// Initial size of the list of event handler removers for a bot session
 	InitUnhandlers = 10
-	mainChannelID   = "140142172979724288"
-	memesChannelID  = "305119943995686913"
-	willowID        = "140136792849514496"
-	shyronnieID     = "140898747264663552"
+	mainChannelID  = "140142172979724288"
+	memesChannelID = "305119943995686913"
+	willowID       = "140136792849514496"
+	shyronnieID    = "140898747264663552"
 )
 
 type bot struct {
@@ -135,14 +135,14 @@ func (b *bot) connectVoicebox(g *discordgo.Guild) *voicebox {
 	// need to use closures so they can manipulate same VoiceConnection vc used in speakTo()
 	disconnect := func() {
 		if vc != nil {
-			log.Printf("Disconnect voice in guild %v", g)
+			log.Printf("Disconnect voice in guild %v %v", g.Name, g.ID)
 			_ = vc.Speaking(false)
 			_ = vc.Disconnect()
 			vc = nil
 		}
 	}
 	goAfk := func() {
-		log.Printf("Join afk channel %v in guild %v", g.AfkChannelID, g)
+		log.Printf("Join afk channel %v in guild %v %v", g.AfkChannelID, g.Name, g.ID)
 		vc, err = b.session.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
 		if err != nil {
 			log.Printf("Error join afk: %#v", err)
@@ -165,7 +165,7 @@ func (b *bot) connectVoicebox(g *discordgo.Guild) *voicebox {
 				if dcTimer != nil {
 					dcTimer.Stop()
 				}
-				log.Printf("Speak to channel %v in guild %v", vp.channelID, g)
+				log.Printf("Speak to channel %v in guild %v %v", vp.channelID, g.Name, g.ID)
 				vc, err = b.session.ChannelVoiceJoin(g.ID, vp.channelID, false, true)
 				if err != nil {
 					log.Printf("Error join channel: %#v\n", err)
@@ -187,7 +187,7 @@ func (b *bot) connectVoicebox(g *discordgo.Guild) *voicebox {
 				if dcTimer != nil {
 					dcTimer.Stop()
 				}
-				log.Printf("Quit voice in guild %v", g)
+				log.Printf("Quit voice in guild %v %v", g.Name, g.ID)
 				disconnect()
 				return
 			}
@@ -219,7 +219,7 @@ func (b *bot) say(vp *voicePayload, guildID string) (err error) {
 		select {
 		case vb.queue <- vp:
 		default:
-			err = fmt.Errorf("Full voicebox in guild %v", vb.guild)
+			err = fmt.Errorf("Full voicebox in guild %v %v", vb.guild.Name, vb.guild.ID)
 		}
 	} else {
 		err = fmt.Errorf("No voicebox registered for guild id %v", guildID)
