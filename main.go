@@ -11,7 +11,7 @@ import (
 	"os/signal"
 )
 
-var me *bot
+var me *Bot
 
 func prepare() (err error) {
 	// dynamically bind some voice actions
@@ -32,7 +32,10 @@ func prepare() (err error) {
 
 func main() {
 	var token string
-	flag.StringVar(&token, "t", "", "Bot Auth Token")
+	var owner string
+	flag.StringVar(&token, "t", "", "Auth Token")
+	// TODO update launch scripts to use my ID and remove default
+	flag.StringVar(&owner, "o", willowID, "Admin User ID")
 	flag.Parse()
 	if token == "" {
 		flag.Usage()
@@ -46,13 +49,13 @@ func main() {
 		log.Fatalf("Error in prepare: %#v\n", err)
 	}
 
-	me = NewBot(token)
+	me = NewBot(token, owner)
 
-	err = me.wakeup()
+	err = me.Wakeup()
 	if err != nil {
 		log.Fatalf("Error in wakeup: %#v\n", err)
 	}
-	defer me.die()
+	defer me.Die()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill)

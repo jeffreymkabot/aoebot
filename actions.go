@@ -14,23 +14,26 @@ import (
 // associate a response to trigger
 type condition struct {
 	// TODO isTriggeredBy better name?
-	trigger  func(ctx *context) bool
+	trigger  func(ctx *Context) bool
 	response action
 	name     string
 }
 
 // perform an action given the context (environment) of its trigger
 type action interface {
-	perform(ctx *context) error
+	perform(ctx *Context) error
 }
 
 const (
+	// MessageContext is an environment around a text message
 	MessageContext = iota
+	// VoiceStateContext is an environment around a voice state
 	VoiceStateContext
 )
 
-// TODO more generic to support capturing the context of more events
-type context struct {
+// Context captures an environment that can elicit bot actions
+// TODO more generic to support capturing the Context of more events
+type Context struct {
 	guild        *discordgo.Guild
 	textChannel  *discordgo.Channel
 	textMessage  *discordgo.Message
@@ -39,8 +42,9 @@ type context struct {
 	Type         int
 }
 
-func NewContext(seed interface{}) (ctx *context, err error) {
-	ctx = &context{}
+// NewContext creates a new environment based on a seed event/trigger
+func NewContext(seed interface{}) (ctx *Context, err error) {
+	ctx = &Context{}
 	switch s := seed.(type) {
 	case *discordgo.Message:
 		ctx.Type = MessageContext
@@ -75,7 +79,9 @@ func NewContext(seed interface{}) (ctx *context, err error) {
 	return
 }
 
-func (ctx context) isOwnContext() bool {
+// IsOwnContext is true when a context references the bot's own actions/behavior
+// This is useful to prevent the bot from reacting to itself
+func (ctx Context) IsOwnContext() bool {
 	return ctx.author != nil && ctx.author.ID == me.self.ID
 }
 
@@ -111,21 +117,20 @@ type quitAction struct {
 }
 
 // type something to the text channel of the original context
-func (ta textAction) perform(ctx *context) (err error) {
-	err = me.write(ctx.textChannel.ID, ta.content, ta.tts)
+func (ta textAction) perform(ctx *Context) (err error) {
+	err = me.Write(ctx.textChannel.ID, ta.content, ta.tts)
 	return
 }
 
 func (ta textAction) String() string {
 	if ta.tts {
 		return fmt.Sprintf("/tts %v", ta.content)
-	} else {
-		return fmt.Sprintf("%v", ta.content)
 	}
+	return fmt.Sprintf("%v", ta.content)
 }
 
-func (era emojiReactionAction) perform(ctx *context) (err error) {
-	err = me.react(ctx.textChannel.ID, ctx.textMessage.ID, era.emoji)
+func (era emojiReactionAction) perform(ctx *Context) (err error) {
+	err = me.React(ctx.textChannel.ID, ctx.textMessage.ID, era.emoji)
 	return
 }
 
@@ -134,30 +139,30 @@ func (era emojiReactionAction) String() string {
 }
 
 // say something to the voice channel of the user in the original context
-func (va *voiceAction) perform(ctx *context) (err error) {
-	vcId := ""
+func (va *voiceAction) perform(ctx *Context) (err error) {
+	vcID := ""
 	if ctx.voiceChannel != nil {
-		vcId = ctx.voiceChannel.ID
+		vcID = ctx.voiceChannel.ID
 	} else {
-		vcId = getVoiceChannelIdByContext(ctx)
+		vcID = getVoiceChannelIDByContext(ctx)
 	}
 
-	if vcId == "" {
+	if vcID == "" {
 		return
 	}
 	vp := &voicePayload{
 		buffer:    va.buffer,
-		channelID: vcId,
+		channelID: vcID,
 	}
-	err = me.say(vp, ctx.guild.ID)
+	err = me.Say(vp, ctx.guild.ID)
 	return
 }
 
-func getVoiceChannelIdByContext(ctx *context) string {
-	return getVoiceChannelIdByUser(ctx.guild, ctx.author)
+func getVoiceChannelIDByContext(ctx *Context) string {
+	return getVoiceChannelIDByUser(ctx.guild, ctx.author)
 }
 
-func getVoiceChannelIdByUser(g *discordgo.Guild, u *discordgo.User) string {
+func getVoiceChannelIDByUser(g *discordgo.Guild, u *discordgo.User) string {
 	for _, vs := range g.VoiceStates {
 		if vs.UserID == u.ID {
 			return vs.ChannelID
@@ -166,9 +171,9 @@ func getVoiceChannelIdByUser(g *discordgo.Guild, u *discordgo.User) string {
 	return ""
 }
 
-func getVoiceChannelIdByUserId(g *discordgo.Guild, uId string) string {
+func getVoiceChannelIDByUserID(g *discordgo.Guild, uID string) string {
 	for _, vs := range g.VoiceStates {
-		if vs.UserID == uId {
+		if vs.UserID == uID {
 			return vs.ChannelID
 		}
 	}
@@ -210,10 +215,9 @@ func (va voiceAction) String() string {
 	return fmt.Sprintf("%v", va.file)
 }
 
-func (rva reconnectVoiceAction) perform(ctx *context) (err error) {
-	// log.Printf("perform reconnect voice action %#v", rva)
+func (rva reconnectVoiceAction) perform(ctx *Context) (err error) {
 	if rva.content != "" {
-		_ = me.write(ctx.textChannel.ID, rva.content, false)
+		_ = me.Write(ctx.textChannel.ID, rva.content, false)
 	}
 	me.reconnectVoicebox(ctx.guild)
 	return
@@ -223,13 +227,12 @@ func (rva reconnectVoiceAction) String() string {
 	return fmt.Sprintf("%v", rva.content)
 }
 
-func (ra restartAction) perform(ctx *context) (err error) {
-	// log.Printf("perform restart session action %#v", ra)
+func (ra restartAction) perform(ctx *Context) (err error) {
 	if ra.content != "" {
-		_ = me.write(ctx.textChannel.ID, ra.content, false)
+		_ = me.Write(ctx.textChannel.ID, ra.content, false)
 	}
-	me.sleep()
-	me.wakeup()
+	me.Sleep()
+	me.Wakeup()
 	return
 }
 
@@ -237,12 +240,11 @@ func (ra restartAction) String() string {
 	return fmt.Sprintf("%v", ra.content)
 }
 
-func (qa quitAction) perform(ctx *context) (err error) {
-	// log.Printf("perform quit action %#v", qa)
+func (qa quitAction) perform(ctx *Context) (err error) {
 	if qa.content != "" {
-		_ = me.write(ctx.textChannel.ID, qa.content, false)
+		_ = me.Write(ctx.textChannel.ID, qa.content, false)
 	}
-	me.die()
+	me.Die()
 	return
 }
 
