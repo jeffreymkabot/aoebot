@@ -8,6 +8,9 @@
 **/*.bat
 **/*.sh
 
+# Files that I leave for myself as notes
+**/*.txt
+
 # Any zips I accidentally leave around
 **/*.7z
 **/*.dmg
