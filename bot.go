@@ -13,8 +13,6 @@ import (
 )
 
 const (
-	// MaxVoiceQueue is the maximum number of voice payloads that can wait to be processed for a particular guild
-	MaxVoiceQueue = 100
 	// InitUnhandlers initial size of the list of event handler removers for a bot session
 	InitUnhandlers = 10
 	mainChannelID  = "140142172979724288"
@@ -35,14 +33,6 @@ type Bot struct {
 	aesthetic  bool
 }
 
-// Voicebox
-// voice data for a particular guild gets sent to the queue in its corresponding voicebox
-type voicebox struct {
-	guild *discordgo.Guild
-	queue chan<- *voicePayload
-	quit  chan<- struct{}
-}
-
 // NewBot initializes a bot
 func NewBot(token string, owner string) *Bot {
 	b := &Bot{
@@ -53,29 +43,6 @@ func NewBot(token string, owner string) *Bot {
 		occupancy:  make(map[string]string),
 	}
 	return b
-}
-
-// Sleep closes the discord session, removes event handlers, and stops all associated workers.
-func (b *Bot) Sleep() {
-	log.Printf("Closing session...")
-
-	b.session.Close()
-
-	for _, f := range b.unhandlers {
-		if f != nil {
-			f()
-		}
-	}
-	b.unhandlers = b.unhandlers[len(b.unhandlers):]
-
-	for k, vb := range b.voiceboxes {
-		vb.quit <- struct{}{}
-		delete(b.voiceboxes, k)
-	}
-
-	b.session = nil
-
-	log.Printf("...closed session.")
 }
 
 // Wakeup initiates a new discord session
@@ -100,6 +67,29 @@ func (b *Bot) Wakeup() (err error) {
 	err = b.session.Open()
 
 	return
+}
+
+// Sleep closes the discord session, removes event handlers, and stops all associated workers.
+func (b *Bot) Sleep() {
+	log.Printf("Closing session...")
+
+	b.session.Close()
+
+	for _, f := range b.unhandlers {
+		if f != nil {
+			f()
+		}
+	}
+	b.unhandlers = b.unhandlers[len(b.unhandlers):]
+
+	for k, vb := range b.voiceboxes {
+		vb.quit <- struct{}{}
+		delete(b.voiceboxes, k)
+	}
+
+	b.session = nil
+
+	log.Printf("...closed session.")
 }
 
 // Die kills the bot
@@ -133,105 +123,6 @@ func onReady(s *discordgo.Session, r *discordgo.Ready) {
 	}
 	me.addHandler(onMessageCreate)
 	me.addHandler(onVoiceStateUpdate)
-}
-
-// dispatch voice data to a particular discord guild
-// listen to a queue of voicePayloads for that guild
-// voicePayloads provide data meant for a voice channel in a discord guild
-// we can remain connected to the same channel while we process a relatively contiguous stream of voicePayloads
-// for that channel
-func (b *Bot) connectVoicebox(g *discordgo.Guild) *voicebox {
-	var vc *discordgo.VoiceConnection
-	var err error
-
-	// afk after a certain amount of time not talking
-	var afkTimer *time.Timer
-	// disconnect voice after a certain amount of time afk
-	var dcTimer *time.Timer
-
-	// disconnect() and goAfk() get invoked as the function arg in time.AfterFunc()
-	// need to use closures so they can manipulate same VoiceConnection vc used in speakTo()
-	disconnect := func() {
-		if vc != nil {
-			log.Printf("Disconnect voice in guild %v %v", g.Name, g.ID)
-			_ = vc.Speaking(false)
-			_ = vc.Disconnect()
-			vc = nil
-		}
-	}
-	goAfk := func() {
-		log.Printf("Join afk channel %v in guild %v %v", g.AfkChannelID, g.Name, g.ID)
-		vc, err = b.session.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
-		if err != nil {
-			log.Printf("Error join afk: %#v", err)
-			disconnect()
-		} else {
-			dcTimer = time.AfterFunc(1*time.Minute, disconnect)
-		}
-	}
-	// defer goAfk()
-	queue := make(chan *voicePayload, MaxVoiceQueue)
-	quit := make(chan struct{})
-
-	go func() {
-		for {
-			select {
-			case vp := <-queue:
-				if afkTimer != nil {
-					afkTimer.Stop()
-				}
-				if dcTimer != nil {
-					dcTimer.Stop()
-				}
-				log.Printf("Speak to channel %v in guild %v %v", vp.channelID, g.Name, g.ID)
-				vc, err = b.session.ChannelVoiceJoin(g.ID, vp.channelID, false, true)
-				if err != nil {
-					log.Printf("Error join channel: %#v\n", err)
-					afkTimer = time.AfterFunc(300*time.Millisecond, goAfk)
-					break
-				}
-				_ = vc.Speaking(true)
-				time.Sleep(100 * time.Millisecond)
-				for _, sample := range vp.buffer {
-					vc.OpusSend <- sample
-				}
-				time.Sleep(100 * time.Millisecond)
-				_ = vc.Speaking(false)
-				afkTimer = time.AfterFunc(300*time.Millisecond, goAfk)
-			case <-quit:
-				if afkTimer != nil {
-					afkTimer.Stop()
-				}
-				if dcTimer != nil {
-					dcTimer.Stop()
-				}
-				log.Printf("Quit voice in guild %v %v", g.Name, g.ID)
-				disconnect()
-				return
-			}
-		}
-	}()
-
-	return &voicebox{
-		guild: g,
-		queue: queue,
-		quit:  quit,
-	}
-}
-
-// TODO voice worker pipeline instead of voicebox god function?
-func (b Bot) newVoiceWorker(g *discordgo.Guild) *voicebox {
-	return nil
-}
-
-func (b *Bot) reconnectVoicebox(g *discordgo.Guild) (err error) {
-	// TODO synchronize connect with end of quit
-	vb, ok := b.voiceboxes[g.ID]
-	if ok {
-		vb.quit <- struct{}{}
-	}
-	b.voiceboxes[g.ID] = b.connectVoicebox(g)
-	return
 }
 
 // Say some audio frames to a guild

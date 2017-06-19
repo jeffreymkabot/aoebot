@@ -99,11 +99,6 @@ type voiceAction struct {
 	buffer [][]byte
 }
 
-type voicePayload struct {
-	buffer    [][]byte
-	channelID string
-}
-
 type reconnectVoiceAction struct {
 	content string
 }
