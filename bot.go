@@ -73,8 +73,6 @@ func (b *Bot) Wakeup() (err error) {
 func (b *Bot) Sleep() {
 	log.Printf("Closing session...")
 
-	b.session.Close()
-
 	for _, f := range b.unhandlers {
 		if f != nil {
 			f()
@@ -83,10 +81,15 @@ func (b *Bot) Sleep() {
 	b.unhandlers = b.unhandlers[len(b.unhandlers):]
 
 	for k, vb := range b.voiceboxes {
-		vb.quit <- struct{}{}
+		close(vb.quit)
+		vb.quit = nil
+		vb.wait.Wait()
+		// TODO does this need to synchronize
 		delete(b.voiceboxes, k)
 	}
 
+	// close the session after closing voice boxes since closing voiceboxes attempts disconnect
+	b.session.Close()
 	b.session = nil
 
 	log.Printf("...closed session.")
@@ -116,7 +119,7 @@ func onReady(s *discordgo.Session, r *discordgo.Ready) {
 	time.Sleep(100 * time.Millisecond)
 	for _, g := range r.Guilds {
 		// exec independent per each guild g
-		me.voiceboxes[g.ID] = me.connectVoicebox(g)
+		me.SpeakTo(g)
 		for _, vs := range g.VoiceStates {
 			me.occupancy[vs.UserID] = vs.ChannelID
 		}

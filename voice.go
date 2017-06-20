@@ -13,7 +13,7 @@ const (
 	// VoiceSendTimeout is the amount of time to wait on the voice send channel before giving up on a voice payload
 	VoiceSendTimeout = 1 * time.Second
 	// AfkTimeout is the amount of time to wait for another voice payload before joining the guild's afk channel
-	AfkTimeout = 1 * time.Second
+	AfkTimeout = 300 * time.Millisecond
 )
 
 // Voicebox
@@ -164,6 +164,8 @@ func payloadSender(s *discordgo.Session, g *discordgo.Guild, queue <-chan *voice
 
 	var frame []byte
 
+	var afkTimer <-chan time.Time
+
 	disconnect := func() {
 		if vc != nil {
 			_ = vc.Speaking(false)
@@ -176,9 +178,9 @@ func payloadSender(s *discordgo.Session, g *discordgo.Guild, queue <-chan *voice
 
 PayloadLoop:
 	for {
-		// check quit signal between every payload
-		// when multiple cases in a select are ready at same time a case is selected randomly
-		// it's possible for a quit signal to go ignored if there is a continuous stream of voice payloads ready in queue
+		// check quit signal between every payload without blocking
+		// otherwise it would be possible for a quit signal to go ignored at least once if there is a continuous stream of voice payloads ready in queue
+		// since when multiple cases in a select are ready at same time a case is selected randomly
 		select {
 		case <-quit:
 			return
@@ -192,7 +194,10 @@ PayloadLoop:
 			if !ok {
 				return
 			}
-		case <-time.After(AfkTimeout):
+		case <-afkTimer:
+			// if vc != nil && vc.ChannelID == g.AfkChannelID {
+			// 	continue PayloadLoop
+			// }
 			vc, err = s.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
 			if err != nil {
 				disconnect()
@@ -213,8 +218,8 @@ PayloadLoop:
 		for _, frame = range vp.buffer {
 			// check quit signal between every frame
 			// when multiple cases in a select are ready at same time a case is selected randomly
-			// it's possible for a quit signal to go ignored for an unacceptable amount of time if there are a lot of frames in the buffer
-			// and vc.OpusSend is ready every time
+			// otherwise it would be possible for a quit signal to go ignored for an unacceptable amount of time if there are a lot of frames in the buffer
+			// and vc.OpusSend is ready for every send
 			select {
 			case <-quit:
 				return
@@ -225,11 +230,14 @@ PayloadLoop:
 			case <-quit:
 				return
 			case vc.OpusSend <- frame:
+			// TODO this could be a memory leak if we keep making new timers
 			case <-time.After(VoiceSendTimeout):
 				break FrameLoop
 			}
 		}
 		_ = vc.Speaking(false)
+		// TODO this could be a memory leak if we keep making new timers
+		afkTimer = time.NewTimer(AfkTimeout).C
 	}
 }
 

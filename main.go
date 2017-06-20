@@ -35,9 +35,9 @@ func main() {
 	var owner string
 	flag.StringVar(&token, "t", "", "Auth Token")
 	// TODO update launch scripts to use my ID and remove default
-	flag.StringVar(&owner, "o", willowID, "Admin User ID")
+	flag.StringVar(&owner, "o", "", "Admin User ID")
 	flag.Parse()
-	if token == "" {
+	if token == "" || owner == "" {
 		flag.Usage()
 		os.Exit(1)
 	}

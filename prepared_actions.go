@@ -28,7 +28,7 @@ var conditions = []condition{
 	// },
 	{
 		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "aoebot", "aoebot?")
+			return ctx.Type == MessageContext && ctx.author != nil && ctx.author.ID != me.owner && containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "aoebot", "aoebot?")
 		},
 		response: &emojiReactionAction{
 			emoji: "🤖", // unicode for :robot:
@@ -45,7 +45,7 @@ var conditions = []condition{
 	},
 	{
 		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && ctx.author != nil && ctx.author.ID != me.owner && containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "hots", "hots?")
+			return ctx.Type == MessageContext && containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "hots", "hots?")
 		},
 		response: &emojiReactionAction{
 			emoji: "🤢", // unicode for :nauseated_face:

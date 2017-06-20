@@ -214,7 +214,7 @@ func (rva reconnectVoiceAction) perform(ctx *Context) (err error) {
 	if rva.content != "" {
 		_ = me.Write(ctx.textChannel.ID, rva.content, false)
 	}
-	me.reconnectVoicebox(ctx.guild)
+	me.SpeakTo(ctx.guild)
 	return
 }
 
