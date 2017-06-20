@@ -108,6 +108,7 @@ type restartAction struct {
 }
 
 type quitAction struct {
+	force   bool
 	content string
 }
 
@@ -239,10 +240,18 @@ func (qa quitAction) perform(ctx *Context) (err error) {
 	if qa.content != "" {
 		_ = me.Write(ctx.textChannel.ID, qa.content, false)
 	}
-	me.Die()
+	if qa.force {
+		me.ForceDie()
+	} else {
+		me.Die()
+	}
 	return
 }
 
 func (qa quitAction) String() string {
-	return fmt.Sprintf("%v", qa.content)
+	if qa.force {
+		return fmt.Sprintf("force %v", qa.content)
+	} else {
+		return fmt.Sprintf("%v", qa.content)
+	}
 }

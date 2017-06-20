@@ -81,10 +81,10 @@ func (b *Bot) Sleep() {
 	b.unhandlers = b.unhandlers[len(b.unhandlers):]
 
 	for k, vb := range b.voiceboxes {
-		close(vb.quit)
-		vb.quit = nil
-		vb.wait.Wait()
-		// TODO does this need to synchronize
+		if vb.quit != nil {
+			close(vb.quit)
+			vb.quit = nil
+		}
 		delete(b.voiceboxes, k)
 	}
 
@@ -95,11 +95,17 @@ func (b *Bot) Sleep() {
 	log.Printf("...closed session.")
 }
 
-// Die kills the bot
+// Die kills the bot gracefully
 func (b *Bot) Die() {
 	b.Sleep()
 	log.Printf("Quit.")
 	os.Exit(0)
+}
+
+// ForceDie kills the bot with a vengeance
+func (b *Bot) ForceDie() {
+	log.Printf("Force Quit.")
+	os.Exit(1)
 }
 
 // Add an event handler to the discord session and retain a reference to the handler remover
@@ -132,7 +138,7 @@ func onReady(s *discordgo.Session, r *discordgo.Ready) {
 // Say drops the payload if the voicebox queue is full
 func (b *Bot) Say(vp *voicePayload, guildID string) (err error) {
 	vb, ok := b.voiceboxes[guildID]
-	if ok {
+	if ok && vb != nil && vb.queue != nil {
 		select {
 		case vb.queue <- vp:
 		default:
@@ -169,7 +175,10 @@ func (b *Bot) Listen() (err error) {
 // Create a context around a voice state when the bot sees a new text message
 // Perform any actions that match that context
 func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	log.Printf("Saw a message: %#v\n", m.Message)
+	if m.Message == nil {
+		return
+	}
+	log.Printf("Saw a new message (%v) by user %v in channel %v", m.Message.Content, m.Message.Author.Username, m.Message.ChannelID)
 	ctx, err := NewContext(m.Message)
 	if err != nil {
 		log.Printf("Error resolving message context: %v", err)
@@ -201,11 +210,11 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 // Create a context around a voice state when the bot sees someone's voice channel change
 // Perform any actions that match that context
 func onVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
-	log.Printf("Saw a voice state update: %#v\n", v.VoiceState)
 	userID := v.VoiceState.UserID
 	channelID := v.VoiceState.ChannelID
 
 	if me.occupancy[userID] != channelID {
+		log.Printf("Saw user %v join the voice channel %v", userID, channelID)
 		// concurrent write vulnerability here
 		me.occupancy[userID] = channelID
 		if channelID == "" {
@@ -214,7 +223,7 @@ func onVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
 
 		ctx, err := NewContext(v.VoiceState)
 		if err != nil {
-			log.Printf("Error resolving message context: %v", err)
+			log.Printf("Error resolving voice state context: %v", err)
 			return
 		}
 		if ctx.IsOwnContext() {

@@ -111,6 +111,15 @@ var conditions = []condition{
 			content: "Are you sure dad? :flushed: :zzz:",
 		},
 	},
+	{
+		trigger: func(ctx *Context) bool {
+			return ctx.Type == MessageContext && ctx.author != nil && ctx.author.ID == me.owner && strings.ToLower(ctx.textMessage.Content) == "aoebot kill yourself"
+		},
+		response: &quitAction{
+			force:   true,
+			content: ":skull:",
+		},
+	},
 }
 
 // Load the audio frames for every audio file used in voice actions into memory

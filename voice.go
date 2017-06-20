@@ -167,7 +167,7 @@ func payloadSender(s *discordgo.Session, g *discordgo.Guild, queue <-chan *voice
 	var afkTimer <-chan time.Time
 
 	disconnect := func() {
-		if vc != nil {
+		if vc != nil && vc.Ready {
 			_ = vc.Speaking(false)
 			_ = vc.Disconnect()
 			vc = nil
@@ -195,6 +195,7 @@ PayloadLoop:
 				return
 			}
 		case <-afkTimer:
+			log.Printf("Afk timeout in guild %v", g.ID)
 			// if vc != nil && vc.ChannelID == g.AfkChannelID {
 			// 	continue PayloadLoop
 			// }
@@ -232,6 +233,7 @@ PayloadLoop:
 			case vc.OpusSend <- frame:
 			// TODO this could be a memory leak if we keep making new timers
 			case <-time.After(VoiceSendTimeout):
+				log.Printf("Opus send timeout in guild %v", g.ID)
 				break FrameLoop
 			}
 		}
