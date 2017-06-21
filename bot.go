@@ -120,36 +120,6 @@ func (b *Bot) addHandlerOnce(handler interface{}) {
 	b.unhandlers = append(b.unhandlers, unhandler)
 }
 
-func onReady(s *discordgo.Session, r *discordgo.Ready) {
-	log.Printf("Ready: %#v\n", r)
-	time.Sleep(100 * time.Millisecond)
-	for _, g := range r.Guilds {
-		// exec independent per each guild g
-		me.SpeakTo(g)
-		for _, vs := range g.VoiceStates {
-			me.occupancy[vs.UserID] = vs.ChannelID
-		}
-	}
-	me.addHandler(onMessageCreate)
-	me.addHandler(onVoiceStateUpdate)
-}
-
-// Say some audio frames to a guild
-// Say drops the payload if the voicebox queue is full
-func (b *Bot) Say(vp *voicePayload, guildID string) (err error) {
-	vb, ok := b.voiceboxes[guildID]
-	if ok && vb != nil && vb.queue != nil {
-		select {
-		case vb.queue <- vp:
-		default:
-			err = fmt.Errorf("Full voicebox in guild %v %v", vb.guild.Name, vb.guild.ID)
-		}
-	} else {
-		err = fmt.Errorf("No voicebox registered for guild id %v", guildID)
-	}
-	return
-}
-
 // Write a message to a channel in a guild
 func (b *Bot) Write(channelID string, message string, tts bool) (err error) {
 	if tts {
@@ -166,10 +136,38 @@ func (b *Bot) React(channelID string, messageID string, emoji string) (err error
 	return
 }
 
+// Say some audio frames to a guild
+// Say drops the payload if the voicebox queue is full
+func (b *Bot) Say(vp *voicePayload, guildID string) (err error) {
+	if vb, ok := b.voiceboxes[guildID]; ok && vb != nil && vb.queue != nil {
+		select {
+		case vb.queue <- vp:
+		default:
+			err = fmt.Errorf("Full voice queue in guild %v", guildID)
+		}
+	} else {
+		err = fmt.Errorf("No voicebox registered for guild %v", guildID)
+	}
+	return
+}
+
 // Listen to some audio frames in a guild
 // TODO
-func (b *Bot) Listen() (err error) {
-	return nil
+func (b *Bot) Listen(channelID string, messageID, string, duration time.Duration) (err error) {
+	return
+}
+
+func onReady(s *discordgo.Session, r *discordgo.Ready) {
+	log.Printf("Ready: %#v\n", r)
+	for _, g := range r.Guilds {
+		// exec independently per each guild g
+		me.SpeakTo(g)
+		for _, vs := range g.VoiceStates {
+			me.occupancy[vs.UserID] = vs.ChannelID
+		}
+	}
+	me.addHandler(onMessageCreate)
+	me.addHandler(onVoiceStateUpdate)
 }
 
 // Create a context around a voice state when the bot sees a new text message

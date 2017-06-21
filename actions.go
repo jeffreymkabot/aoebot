@@ -251,7 +251,6 @@ func (qa quitAction) perform(ctx *Context) (err error) {
 func (qa quitAction) String() string {
 	if qa.force {
 		return fmt.Sprintf("force %v", qa.content)
-	} else {
-		return fmt.Sprintf("%v", qa.content)
 	}
+	return fmt.Sprintf("%v", qa.content)
 }
