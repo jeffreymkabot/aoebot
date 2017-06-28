@@ -186,22 +186,22 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	for _, c := range conditions {
-		if c.trigger(ctx) {
-			// shadow c in the closure of the goroutine
-			go func(c condition) {
-				defer func() {
-					if err := recover(); err != nil {
-						log.Printf("Recovered from panic in perform %T on message create: %v", c.response, err)
-					}
-				}()
-				log.Printf("Perform %T on message create: %v", c.response, c.response)
-				err := c.response.perform(ctx)
-				if err != nil {
-					log.Printf("Error in perform %T on message create: %v", c.response, err)
+	actions := ctx.Actions()
+	for _, a := range actions {
+		// shadow a in the goroutine
+		// as a iterates through for loop while goroutine would otherwise try to use it in closure asynchronously
+		go func(a Action) {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Printf("Recovered from panic in perform %T on message create: %v", a, err)
 				}
-			}(c)
-		}
+			}()
+			log.Printf("Perform %T on message create: %v", a, a)
+			err := a.perform(ctx)
+			if err != nil {
+				log.Printf("Error in perform %T on message create: %v", a, err)
+			}
+		}(a)
 	}
 }
 
@@ -228,22 +228,22 @@ func onVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
 			return
 		}
 
-		for _, c := range conditions {
-			if c.trigger(ctx) {
-				// shadow c because it changes in the closure via for loop
-				go func(c condition) {
-					defer func() {
-						if err := recover(); err != nil {
-							log.Printf("Recovered from panic in perform %T on voice state update: %v", c.response, err)
-						}
-					}()
-					log.Printf("Perform %T on voice state update: %v", c.response, c.response)
-					err := c.response.perform(ctx)
-					if err != nil {
-						log.Printf("Error in perform %T on voice state update: %v", c.response, err)
+		actions := ctx.Actions()
+		for _, a := range actions {
+			// shadow a in the goroutine
+			// as a iterates through for loop while goroutine would otherwise try to use it in closure asynchronously
+			go func(a Action) {
+				defer func() {
+					if err := recover(); err != nil {
+						log.Printf("Recovered from panic in perform %T on voice state update: %v", a, err)
 					}
-				}(c)
-			}
+				}()
+				log.Printf("Perform %T on voice state update: %v", a, a)
+				err := a.perform(ctx)
+				if err != nil {
+					log.Printf("Error in perform %T on voice state update: %v", a, err)
+				}
+			}(a)
 		}
 	}
 	return

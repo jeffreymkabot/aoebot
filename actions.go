@@ -15,12 +15,12 @@ import (
 type condition struct {
 	// TODO isTriggeredBy better name?
 	trigger  func(ctx *Context) bool
-	response action
+	response Action
 	name     string
 }
 
-// perform an action given the context (environment) of its trigger
-type action interface {
+// Action can be performed given the context (environment) of its trigger
+type Action interface {
 	perform(ctx *Context) error
 }
 
@@ -83,6 +83,17 @@ func NewContext(seed interface{}) (ctx *Context, err error) {
 // This is useful to prevent the bot from reacting to itself
 func (ctx Context) IsOwnContext() bool {
 	return ctx.author != nil && ctx.author.ID == me.self.ID
+}
+
+// Actions returns a list of actions matching a context
+func (ctx *Context) Actions() []Action {
+	actions := make([]Action, 10)
+	for _, c := range conditions {
+		if c.trigger(ctx) {
+			actions = append(actions, c.response)
+		}
+	}
+	return actions
 }
 
 type textAction struct {
