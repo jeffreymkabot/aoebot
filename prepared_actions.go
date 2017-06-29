@@ -1,123 +1,142 @@
 package main
 
 import (
-	// "fmt"
+	"fmt"
 	"io/ioutil"
 	"regexp"
-	"strings"
 )
 
-var conditions = []condition{
+var conditions = []Condition{
 	{
-		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "?mayo")
+		ContextType: MessageContext,
+		Phrase:      `?testwrite`,
+		ActionType:  write,
+		Action: &textAction{
+			content: `hello world`,
 		},
-		response: &textAction{
-			content: "Is mayonnaise an instrument?",
+	},
+	{
+		ContextType: MessageContext,
+		Phrase:      `?testvoice`,
+		ActionType:  say,
+		Action: &voiceAction{
+			file: `media/audio/40 enemy.dca`,
+		},
+	},
+	{
+		ContextType: MessageContext,
+		Phrase:      `?testreact`,
+		ActionType:  react,
+		Action: &emojiReactionAction{
+			emoji: `🤖`,
+		},
+	},
+	{
+		ContextType: MessageContext,
+		Phrase:      `\baoebot\b`,
+		IsRegex:     true,
+		ActionType:  react,
+		Action: &emojiReactionAction{
+			emoji: `🤖`,
+		},
+	},
+	{
+		ContextType: MessageContext,
+		Phrase:      `\bheroes of the storm\b`,
+		IsRegex:     true,
+		ActionType:  write,
+		Action: &textAction{
+			content: `🤢`,
+		},
+	},
+	{
+		ContextType: MessageContext,
+		Phrase:      `\bhots\b`,
+		IsRegex:     true,
+		ActionType:  react,
+		Action: &emojiReactionAction{
+			emoji: `🤢`,
+		},
+	},
+	{
+		ContextType: MessageContext,
+		Phrase:      `\bsmash\b`,
+		IsRegex:     true,
+		ActionType:  write,
+		Action: &textAction{
+			content: `Smash that ready button!`,
 			tts:     true,
 		},
 	},
-	// {
-	// 	trigger: func(ctx *context) bool {
-	// 		return ctx.Type == MessageContext && containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "aoebot?")
-	// 	},
-	// 	response: &textAction{
-	// 		content: ":robot:",
-	// 		tts:     false,
-	// 	},
-	// },
 	{
-		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && ctx.author != nil && ctx.author.ID != me.owner && containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "aoebot", "aoebot?")
-		},
-		response: &emojiReactionAction{
-			emoji: "🤖", // unicode for :robot:
+		ContextType: MessageContext,
+		Phrase:      `\bbruh\b`,
+		IsRegex:     true,
+		ActionType:  say,
+		Action: &voiceAction{
+			file: `media/audio/H3H3_BRUH.dca`,
 		},
 	},
 	{
-		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && strings.Contains(strings.ToLower(ctx.textMessage.Content), "heroes of the storm")
-		},
-		response: &textAction{
-			content: ":nauseated_face:",
-			tts:     false,
-		},
-	},
-	{
-		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "hots", "hots?")
-		},
-		response: &emojiReactionAction{
-			emoji: "🤢", // unicode for :nauseated_face:
+		ContextType: MessageContext,
+		Phrase:      `\bnice shades\b`,
+		IsRegex:     true,
+		ActionType:  say,
+		Action: &voiceAction{
+			file: `media/audio/my_vision_is_augmented.dca`,
 		},
 	},
 	{
-		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "smash")
-		},
-		response: &textAction{
-			content: "Smash that ready button!",
-			tts:     true,
-		},
-	},
-	{
-		trigger: func(ctx *Context) bool {
-			return false && ctx.Type == VoiceStateContext && ctx.author != nil && ctx.author.ID == willowID && ctx.voiceChannel != nil
-		},
-		response: &voiceAction{
-			file: "media/audio/40 enemy.dca",
-		},
-		name: "willow",
-	},
-	{
-		trigger: func(ctx *Context) bool {
-			return ctx.Type == VoiceStateContext && ctx.author != nil && ctx.author.ID == shyronnieID && ctx.voiceChannel != nil
-		},
-		response: &voiceAction{
-			file: "media/audio/shyronnie1.dca",
-		},
-		name: "shyronnie",
-	},
-	{
-		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && ctx.author != nil && containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), "bruh")
-		},
-		response: &voiceAction{
-			file: "media/audio/H3H3_BRUH.dca",
-		},
-		name: "bruh",
-	},
-	{
-		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && ctx.author != nil && ctx.author.ID == me.owner && strings.ToLower(ctx.textMessage.Content) == "aoebot reconnect voice"
-		},
-		response: &reconnectVoiceAction{
-			content: "Sure thing dad :slight_smile:",
+		ContextType: VoiceStateContext,
+		UserID:      willowID,
+		ActionType:  say,
+		Action: &voiceAction{
+			file: `media/audio/41 neutral.dca`,
 		},
 	},
 	{
-		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && ctx.author != nil && ctx.author.ID == me.owner && strings.ToLower(ctx.textMessage.Content) == "aoebot restart"
-		},
-		response: &restartAction{
-			content: "Okay dad :eyes:",
-		},
-	},
-	{
-		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && ctx.author != nil && ctx.author.ID == me.owner && strings.ToLower(ctx.textMessage.Content) == "aoebot go to sleep"
-		},
-		response: &quitAction{
-			content: "Are you sure dad? :flushed: :zzz:",
+		ContextType: VoiceStateContext,
+		UserID:      shyronnieID,
+		ActionType:  say,
+		Action: &voiceAction{
+			file: `media/audio/shyronnie1.dca`,
 		},
 	},
 	{
-		trigger: func(ctx *Context) bool {
-			return ctx.Type == MessageContext && ctx.author != nil && ctx.author.ID == me.owner && strings.ToLower(ctx.textMessage.Content) == "aoebot kill yourself"
+		ContextType: MessageContext,
+		Phrase:      `aoebot reconnect voice`,
+		UserID:      willowID,
+		ActionType:  reconnect,
+		Action: &reconnectVoiceAction{
+			content: `Sure thing dad :slight_smile:`,
 		},
-		response: &quitAction{
-			force:   true,
+	},
+	{
+		ContextType: MessageContext,
+		Phrase:      `aoebot restart`,
+		UserID:      willowID,
+		ActionType:  reconnect,
+		Action: &restartAction{
+			content: `Okay dad :eyes:`,
+		},
+	},
+	{
+		ContextType: MessageContext,
+		Phrase:      `aoebot go to sleep`,
+		UserID:      willowID,
+		ActionType:  quit,
+		Action: &quitAction{
+			content: `Are you sure dad? :flushed: :zzz:`,
+		},
+	},
+	{
+		ContextType: MessageContext,
+		Phrase:      `aoebot kill yourself`,
+		UserID:      willowID,
+		ActionType:  quit,
+		Action: &quitAction{
 			content: ":skull:",
+			force:   true,
 		},
 	},
 }
@@ -125,7 +144,7 @@ var conditions = []condition{
 // Load the audio frames for every audio file used in voice actions into memory
 func loadVoiceActionFiles() error {
 	for _, c := range conditions {
-		va, ok := c.response.(*voiceAction)
+		va, ok := c.Action.(*voiceAction)
 		if ok {
 			// TODO could go va.load() for async
 			err := va.load()
@@ -154,14 +173,14 @@ func createAoeChatCommands() error {
 		fname := file.Name()
 		if re.MatchString(fname) {
 			phrase := re.FindStringSubmatch(fname)[1]
-			c := condition{
-				trigger: func(ctx *Context) bool {
-					return ctx.Type == MessageContext && containsKeyword(strings.Split(strings.ToLower(ctx.textMessage.Content), " "), phrase)
-				},
-				response: &voiceAction{
+			c := Condition{
+				ContextType: MessageContext,
+				Phrase:      fmt.Sprintf(`\b%v\b`, phrase),
+				IsRegex:     true,
+				ActionType:  say,
+				Action: &voiceAction{
 					file: "media/audio/" + fname,
 				},
-				name: phrase,
 			}
 			conditions = append(conditions, c)
 		}

@@ -2,22 +2,38 @@ package main
 
 import (
 	"encoding/binary"
+	_ "encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	_ "github.com/fatih/structs"
 	"io"
-	// "log"
 	"os"
-	// "strings"
-	// "time"
+	"regexp"
 )
 
-// associate a response to trigger
-type condition struct {
-	// TODO isTriggeredBy better name?
-	trigger  func(ctx *Context) bool
-	response Action
-	name     string
+// Condition defines a set of requirements an environment should meet for an action to be performed on that environment
+type Condition struct {
+	Name string
+	// e.g. MessageContext, VoiceStateContext
+	ContextType int
+	Phrase      string
+	IsRegex     bool
+	GuildID     string
+	ChannelID   string
+	UserID      string
+	// e.g. textAction, quitAction
+	ActionType int
+	Action     Action
 }
+
+const (
+	write = iota
+	say
+	react
+	reconnect
+	restart
+	quit
+)
 
 // Action can be performed given the context (environment) of its trigger
 type Action interface {
@@ -34,11 +50,11 @@ const (
 // Context captures an environment that can elicit bot actions
 // TODO more generic to support capturing the Context of more events
 type Context struct {
-	guild        *discordgo.Guild
-	textChannel  *discordgo.Channel
-	textMessage  *discordgo.Message
-	voiceChannel *discordgo.Channel
-	author       *discordgo.User
+	Guild        *discordgo.Guild
+	TextChannel  *discordgo.Channel
+	TextMessage  *discordgo.Message
+	VoiceChannel *discordgo.Channel
+	Author       *discordgo.User
 	Type         int
 }
 
@@ -48,27 +64,27 @@ func NewContext(seed interface{}) (ctx *Context, err error) {
 	switch s := seed.(type) {
 	case *discordgo.Message:
 		ctx.Type = MessageContext
-		ctx.textMessage = s
-		ctx.author = s.Author
-		ctx.textChannel, err = me.session.State.Channel(s.ChannelID)
+		ctx.TextMessage = s
+		ctx.Author = s.Author
+		ctx.TextChannel, err = me.session.State.Channel(s.ChannelID)
 		if err != nil {
 			return
 		}
-		ctx.guild, err = me.session.State.Guild(ctx.textChannel.GuildID)
+		ctx.Guild, err = me.session.State.Guild(ctx.TextChannel.GuildID)
 		if err != nil {
 			return
 		}
 	case *discordgo.VoiceState:
 		ctx.Type = VoiceStateContext
-		ctx.author, err = me.session.User(s.UserID)
+		ctx.Author, err = me.session.User(s.UserID)
 		if err != nil {
 			return
 		}
-		ctx.voiceChannel, err = me.session.State.Channel(s.ChannelID)
+		ctx.VoiceChannel, err = me.session.State.Channel(s.ChannelID)
 		if err != nil {
 			return
 		}
-		ctx.guild, err = me.session.State.Guild(ctx.voiceChannel.GuildID)
+		ctx.Guild, err = me.session.State.Guild(ctx.VoiceChannel.GuildID)
 		if err != nil {
 			return
 		}
@@ -82,18 +98,34 @@ func NewContext(seed interface{}) (ctx *Context, err error) {
 // IsOwnContext is true when a context references the bot's own actions/behavior
 // This is useful to prevent the bot from reacting to itself
 func (ctx Context) IsOwnContext() bool {
-	return ctx.author != nil && ctx.author.ID == me.self.ID
+	return ctx.Author != nil && ctx.Author.ID == me.self.ID
 }
 
 // Actions returns a list of actions matching a context
 func (ctx *Context) Actions() []Action {
-	actions := make([]Action, 10)
+	actions := []Action{}
 	for _, c := range conditions {
-		if c.trigger(ctx) {
-			actions = append(actions, c.response)
+		if ctx.Satisfies(c) {
+			actions = append(actions, c.Action)
 		}
 	}
 	return actions
+}
+
+// Satisfies is true when the environment described in a Context meets the requirements defined in a Condition
+// Some conditions are more specific than others
+func (ctx *Context) Satisfies(c Condition) bool {
+	typeMatch := ctx.Type == c.ContextType
+	guildMatch := c.GuildID == "" || (ctx.Guild != nil && ctx.Guild.ID == c.GuildID)
+	userMatch := c.UserID == "" || (ctx.Author != nil && ctx.Author.ID == c.UserID)
+	// textChannelMatch := c.ChannelID == "" || (ctx.textChannel != nil && ctx.channel.ID == c.ChannelID)
+	// voiceChannelMatch :=
+	phraseMatch :=
+		c.Phrase == "" ||
+			(ctx.TextMessage != nil &&
+				((!c.IsRegex && ctx.TextMessage.Content == c.Phrase) ||
+					(c.IsRegex && regexp.MustCompile(c.Phrase).MatchString(ctx.TextMessage.Content))))
+	return typeMatch && guildMatch && userMatch && phraseMatch
 }
 
 type textAction struct {
@@ -125,7 +157,7 @@ type quitAction struct {
 
 // type something to the text channel of the original context
 func (ta textAction) perform(ctx *Context) (err error) {
-	err = me.Write(ctx.textChannel.ID, ta.content, ta.tts)
+	err = me.Write(ctx.TextChannel.ID, ta.content, ta.tts)
 	return
 }
 
@@ -137,7 +169,7 @@ func (ta textAction) String() string {
 }
 
 func (era emojiReactionAction) perform(ctx *Context) (err error) {
-	err = me.React(ctx.textChannel.ID, ctx.textMessage.ID, era.emoji)
+	err = me.React(ctx.TextChannel.ID, ctx.TextMessage.ID, era.emoji)
 	return
 }
 
@@ -148,8 +180,8 @@ func (era emojiReactionAction) String() string {
 // say something to the voice channel of the user in the original context
 func (va *voiceAction) perform(ctx *Context) (err error) {
 	vcID := ""
-	if ctx.voiceChannel != nil {
-		vcID = ctx.voiceChannel.ID
+	if ctx.VoiceChannel != nil {
+		vcID = ctx.VoiceChannel.ID
 	} else {
 		vcID = getVoiceChannelIDByContext(ctx)
 	}
@@ -161,12 +193,12 @@ func (va *voiceAction) perform(ctx *Context) (err error) {
 		buffer:    va.buffer,
 		channelID: vcID,
 	}
-	err = me.Say(vp, ctx.guild.ID)
+	err = me.Say(vp, ctx.Guild.ID)
 	return
 }
 
 func getVoiceChannelIDByContext(ctx *Context) string {
-	return getVoiceChannelIDByUser(ctx.guild, ctx.author)
+	return getVoiceChannelIDByUser(ctx.Guild, ctx.Author)
 }
 
 func getVoiceChannelIDByUser(g *discordgo.Guild, u *discordgo.User) string {
@@ -224,9 +256,9 @@ func (va voiceAction) String() string {
 
 func (rva reconnectVoiceAction) perform(ctx *Context) (err error) {
 	if rva.content != "" {
-		_ = me.Write(ctx.textChannel.ID, rva.content, false)
+		_ = me.Write(ctx.TextChannel.ID, rva.content, false)
 	}
-	me.SpeakTo(ctx.guild)
+	me.SpeakTo(ctx.Guild)
 	return
 }
 
@@ -236,7 +268,7 @@ func (rva reconnectVoiceAction) String() string {
 
 func (ra restartAction) perform(ctx *Context) (err error) {
 	if ra.content != "" {
-		_ = me.Write(ctx.textChannel.ID, ra.content, false)
+		_ = me.Write(ctx.TextChannel.ID, ra.content, false)
 	}
 	me.Sleep()
 	me.Wakeup()
@@ -249,7 +281,7 @@ func (ra restartAction) String() string {
 
 func (qa quitAction) perform(ctx *Context) (err error) {
 	if qa.content != "" {
-		_ = me.Write(ctx.textChannel.ID, qa.content, false)
+		_ = me.Write(ctx.TextChannel.ID, qa.content, false)
 	}
 	if qa.force {
 		me.ForceDie()
