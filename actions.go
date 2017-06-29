@@ -121,11 +121,12 @@ func (ctx *Context) Satisfies(c Condition) bool {
 	userMatch := c.UserID == "" || (ctx.Author != nil && ctx.Author.ID == c.UserID)
 	// textChannelMatch := c.ChannelID == "" || (ctx.textChannel != nil && ctx.channel.ID == c.ChannelID)
 	// voiceChannelMatch :=
-	phraseMatch :=
-		c.Phrase == "" ||
-			(ctx.TextMessage != nil &&
-				((!c.IsRegex && ctx.TextMessage.Content == c.Phrase) ||
-					(c.IsRegex && regexp.MustCompile(c.Phrase).MatchString(ctx.TextMessage.Content))))
+	ctxPhrase := ""
+	if ctx.TextMessage != nil {
+		ctxPhrase = strings.ToLower(ctx.TextMessage.Content)
+	}
+	phraseMatch := c.Phrase == "" ||
+		((!c.IsRegex && ctxPhrase == c.Phrase) || (c.IsRegex && regexp.MustCompile(c.Phrase).MatchString(ctxPhrase)))
 	return typeMatch && guildMatch && userMatch && phraseMatch
 }
 
