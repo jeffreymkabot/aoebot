@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strings"
 )
 
 // Condition defines a set of requirements an environment should meet for an action to be performed on that environment
