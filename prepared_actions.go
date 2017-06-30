@@ -108,7 +108,7 @@ var conditions = []Condition{
 		UserID:      willowID,
 		ActionType:  reconnect,
 		Action: &reconnectVoiceAction{
-			content: `Sure thing dad :slight_smile:`,
+			content: `Sure thing dad 🙂`,
 		},
 	},
 	{
@@ -117,7 +117,7 @@ var conditions = []Condition{
 		UserID:      willowID,
 		ActionType:  reconnect,
 		Action: &restartAction{
-			content: `Okay dad :eyes:`,
+			content: `Okay dad 👀`,
 		},
 	},
 	{
@@ -126,7 +126,7 @@ var conditions = []Condition{
 		UserID:      willowID,
 		ActionType:  quit,
 		Action: &quitAction{
-			content: `Are you sure dad? :flushed: :zzz:`,
+			content: `Are you sure dad? 😳 💤`,
 		},
 	},
 	{
@@ -135,7 +135,7 @@ var conditions = []Condition{
 		UserID:      willowID,
 		ActionType:  quit,
 		Action: &quitAction{
-			content: ":skull:",
+			content: `💀`,
 			force:   true,
 		},
 	},
