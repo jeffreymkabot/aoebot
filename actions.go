@@ -191,11 +191,11 @@ func (va *voiceAction) perform(ctx *Context) (err error) {
 	if vcID == "" {
 		return
 	}
-	vp := &voicePayload{
-		buffer:    va.buffer,
-		channelID: vcID,
-	}
-	err = me.Say(vp, ctx.Guild.ID)
+	// vp := &voicePayload{
+	// 	buffer:    va.buffer,
+	// 	channelID: vcID,
+	// }
+	err = me.Say(ctx.Guild.ID, vcID, va.buffer)
 	return
 }
 

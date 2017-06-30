@@ -13,8 +13,6 @@ import (
 )
 
 const (
-	// InitUnhandlers initial size of the list of event handler removers for a bot session
-	InitUnhandlers = 10
 	mainChannelID  = "140142172979724288"
 	memesChannelID = "305119943995686913"
 	willowID       = "140136792849514496"
@@ -38,7 +36,7 @@ func NewBot(token string, owner string) *Bot {
 	b := &Bot{
 		token:      token,
 		owner:      owner,
-		unhandlers: make([]func(), InitUnhandlers),
+		unhandlers: []func(){},
 		voiceboxes: make(map[string]*voicebox),
 		occupancy:  make(map[string]string),
 	}
@@ -136,10 +134,14 @@ func (b *Bot) React(channelID string, messageID string, emoji string) (err error
 	return
 }
 
-// Say some audio frames to a guild
-// Say drops the payload if the voicebox queue is full
-func (b *Bot) Say(vp *voicePayload, guildID string) (err error) {
+// Say some audio frames to a channel in a guild
+// Say drops the payload when the voicebox for that guild queue is full
+func (b *Bot) Say(guildID string, channelID string, audio [][]byte) (err error) {
 	if vb, ok := b.voiceboxes[guildID]; ok && vb != nil && vb.queue != nil {
+		vp := &voicePayload{
+			buffer:    audio,
+			channelID: channelID,
+		}
 		select {
 		case vb.queue <- vp:
 		default:
@@ -153,7 +155,7 @@ func (b *Bot) Say(vp *voicePayload, guildID string) (err error) {
 
 // Listen to some audio frames in a guild
 // TODO
-func (b *Bot) Listen(channelID string, messageID, string, duration time.Duration) (err error) {
+func (b *Bot) Listen(guildID string, channelID string, duration time.Duration) (err error) {
 	return
 }
 

@@ -11,6 +11,9 @@
 # Files that I leave for myself as notes
 **/*.txt
 
+# Unsupported Media files
+**/*.mp3
+
 # Any zips I accidentally leave around
 **/*.7z
 **/*.dmg
