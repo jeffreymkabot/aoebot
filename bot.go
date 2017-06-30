@@ -8,15 +8,19 @@ import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"log"
+	"math/rand"
 	"os"
 	"time"
 )
 
 const (
-	mainChannelID  = "140142172979724288"
-	memesChannelID = "305119943995686913"
-	willowID       = "140136792849514496"
-	shyronnieID    = "140898747264663552"
+	// globals are only for convienience while experiment
+	// values will eventually be encoded with action conditions in a database
+	mainChannelID    = "140142172979724288"
+	memesChannelID   = "305119943995686913"
+	openmicChannelID = "322881248366428161"
+	willowID         = "140136792849514496"
+	shyronnieID      = "140898747264663552"
 )
 
 // Bot represents a discord bot
@@ -25,6 +29,7 @@ type Bot struct {
 	owner      string
 	session    *discordgo.Session
 	self       *discordgo.User
+	routines   []*botroutine
 	unhandlers []func()
 	voiceboxes map[string]*voicebox // TODO voiceboxes is vulnerable to concurrent read/write
 	occupancy  map[string]string    // TODO occupancy is vulnerable to concurrent read/write
@@ -36,6 +41,7 @@ func NewBot(token string, owner string) *Bot {
 	b := &Bot{
 		token:      token,
 		owner:      owner,
+		routines:   []*botroutine{},
 		unhandlers: []func(){},
 		voiceboxes: make(map[string]*voicebox),
 		occupancy:  make(map[string]string),
@@ -86,6 +92,14 @@ func (b *Bot) Sleep() {
 		delete(b.voiceboxes, k)
 	}
 
+	for _, r := range b.routines {
+		if r.quit != nil {
+			close(r.quit)
+			r.quit = nil
+		}
+	}
+	b.routines = b.routines[len(b.routines):]
+
 	// close the session after closing voice boxes since closing voiceboxes attempts disconnect
 	b.session.Close()
 	b.session = nil
@@ -116,6 +130,15 @@ func (b *Bot) addHandler(handler interface{}) {
 func (b *Bot) addHandlerOnce(handler interface{}) {
 	unhandler := b.session.AddHandlerOnce(handler)
 	b.unhandlers = append(b.unhandlers, unhandler)
+}
+
+func (b *Bot) addRoutine(f func(<-chan struct{})) {
+	quit := make(chan struct{})
+	go f(quit)
+	r := &botroutine{
+		quit: quit,
+	}
+	b.routines = append(b.routines, r)
 }
 
 // Write a message to a channel in a guild
@@ -170,6 +193,7 @@ func onReady(s *discordgo.Session, r *discordgo.Ready) {
 	}
 	me.addHandler(onMessageCreate)
 	me.addHandler(onVoiceStateUpdate)
+	me.addRoutine(randomVoiceInOpenMic)
 }
 
 // Create a context around a voice state when the bot sees a new text message
@@ -249,6 +273,62 @@ func onVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
 		}
 	}
 	return
+}
+
+type botroutine struct {
+	quit chan<- struct{}
+}
+
+// hardcoded experiment for now
+func randomVoiceInOpenMic(quit <-chan struct{}) {
+	var err error
+	var wait time.Duration
+	log.Printf("Begin random voice routine")
+	defer log.Printf("End random voice routine")
+	for {
+		select {
+		case <-quit:
+			return
+		default:
+		}
+		wait = randomNormalWait(120, 30)
+		log.Printf("Next random voice in %f seconds", wait.Seconds())
+		select {
+		case <-quit:
+			return
+		case <-time.After(wait):
+			ctx := &Context{}
+			ctx.Type = adHocContext
+			ctx.VoiceChannel, err = me.session.State.Channel(openmicChannelID)
+			if err != nil {
+				log.Printf("Error resolve open mic channel %v", err)
+				continue
+			}
+			ctx.Guild, err = me.session.State.Guild(ctx.VoiceChannel.GuildID)
+			if err != nil {
+				log.Printf("Error resolve open mic guild %v", err)
+				continue
+			}
+			if ctx.IsOwnContext() {
+				continue
+			}
+			actions := ctx.Actions()
+			// randomly perform just one of the actions
+			a := actions[rand.Intn(len(actions))]
+			go func(a Action) {
+				defer func() {
+					if err := recover(); err != nil {
+						log.Printf("Recovered from panic in perform %T on random voice: %v", a, err)
+					}
+				}()
+				log.Printf("Perform %T on random voice: %v", a, a)
+				err := a.perform(ctx)
+				if err != nil {
+					log.Printf("Error in perform %T on random voice: %v", a, err)
+				}
+			}(a)
+		}
+	}
 }
 
 // func (g discordgo.Guild) String() string {

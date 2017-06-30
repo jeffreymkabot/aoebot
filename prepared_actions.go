@@ -139,6 +139,38 @@ var conditions = []Condition{
 			force:   true,
 		},
 	},
+	{
+		ContextType:    adHocContext,
+		VoiceChannelID: openmicChannelID,
+		ActionType:     say,
+		Action: &voiceAction{
+			file: `media/audio/vomit_1.dca`,
+		},
+	},
+	{
+		ContextType:    adHocContext,
+		VoiceChannelID: openmicChannelID,
+		ActionType:     say,
+		Action: &voiceAction{
+			file: `media/audio/vomit_cough.dca`,
+		},
+	},
+	{
+		ContextType:    adHocContext,
+		VoiceChannelID: openmicChannelID,
+		ActionType:     say,
+		Action: &voiceAction{
+			file: `media/audio/vomit_long.dca`,
+		},
+	},
+	{
+		ContextType:    adHocContext,
+		VoiceChannelID: openmicChannelID,
+		ActionType:     say,
+		Action: &voiceAction{
+			file: `media/audio/vomit_help.dca`,
+		},
+	},
 }
 
 // Load the audio frames for every audio file used in voice actions into memory

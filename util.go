@@ -1,8 +1,10 @@
 package main
 
 import (
-	// "fmt"
+	"math"
+	"math/rand"
 	"reflect"
+	"time"
 )
 
 var toAesthetic = map[rune]rune{
@@ -231,4 +233,10 @@ func containsKeyword(s []string, t ...string) bool {
 		}
 	}
 	return false
+}
+
+func randomNormalWait(m float64, s float64) time.Duration {
+	r := s*rand.NormFloat64() + m
+	r = math.Max(r, 0)
+	return time.Duration(int(r) * int(time.Second))
 }

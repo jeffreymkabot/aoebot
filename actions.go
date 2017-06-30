@@ -16,12 +16,13 @@ import (
 type Condition struct {
 	Name string
 	// e.g. MessageContext, VoiceStateContext
-	ContextType int
-	Phrase      string
-	IsRegex     bool
-	GuildID     string
-	ChannelID   string
-	UserID      string
+	ContextType    int
+	Phrase         string
+	IsRegex        bool
+	GuildID        string
+	TextChannelID  string
+	VoiceChannelID string
+	UserID         string
 	// e.g. textAction, quitAction
 	ActionType int
 	Action     Action
@@ -46,6 +47,8 @@ const (
 	MessageContext = iota
 	// VoiceStateContext is an environment around a voice state
 	VoiceStateContext
+	//
+	adHocContext
 )
 
 // Context captures an environment that can elicit bot actions
@@ -119,15 +122,15 @@ func (ctx *Context) Satisfies(c Condition) bool {
 	typeMatch := ctx.Type == c.ContextType
 	guildMatch := c.GuildID == "" || (ctx.Guild != nil && ctx.Guild.ID == c.GuildID)
 	userMatch := c.UserID == "" || (ctx.Author != nil && ctx.Author.ID == c.UserID)
-	// textChannelMatch := c.ChannelID == "" || (ctx.textChannel != nil && ctx.channel.ID == c.ChannelID)
-	// voiceChannelMatch :=
+	textChannelMatch := c.TextChannelID == "" || (ctx.TextChannel != nil && ctx.TextChannel.ID == c.TextChannelID)
+	voiceChannelMatch := c.VoiceChannelID == "" || (ctx.VoiceChannel != nil && ctx.VoiceChannel.ID == c.VoiceChannelID)
 	ctxPhrase := ""
 	if ctx.TextMessage != nil {
 		ctxPhrase = strings.ToLower(ctx.TextMessage.Content)
 	}
 	phraseMatch := c.Phrase == "" ||
 		((!c.IsRegex && ctxPhrase == c.Phrase) || (c.IsRegex && regexp.MustCompile(c.Phrase).MatchString(ctxPhrase)))
-	return typeMatch && guildMatch && userMatch && phraseMatch
+	return typeMatch && guildMatch && userMatch && textChannelMatch && voiceChannelMatch && phraseMatch
 }
 
 type textAction struct {
@@ -153,8 +156,8 @@ type restartAction struct {
 }
 
 type quitAction struct {
-	force   bool
 	content string
+	force   bool
 }
 
 // type something to the text channel of the original context
@@ -187,14 +190,10 @@ func (va *voiceAction) perform(ctx *Context) (err error) {
 	} else {
 		vcID = getVoiceChannelIDByContext(ctx)
 	}
-
 	if vcID == "" {
 		return
 	}
-	// vp := &voicePayload{
-	// 	buffer:    va.buffer,
-	// 	channelID: vcID,
-	// }
+
 	err = me.Say(ctx.Guild.ID, vcID, va.buffer)
 	return
 }
