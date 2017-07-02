@@ -12,22 +12,6 @@ import (
 	"strings"
 )
 
-// Condition defines a set of requirements an environment should meet for an action to be performed on that environment
-type Condition struct {
-	Name string
-	// e.g. MessageContext, VoiceStateContext
-	ContextType    int
-	Phrase         string
-	IsRegex        bool
-	GuildID        string
-	TextChannelID  string
-	VoiceChannelID string
-	UserID         string
-	// e.g. textAction, quitAction
-	ActionType int
-	Action     Action
-}
-
 const (
 	write = iota
 	say
@@ -187,7 +171,7 @@ func (era emojiReactionAction) String() string {
 }
 
 // say something to the voice channel of the user in the original context
-func (va *voiceAction) perform(ctx *Context) (err error) {
+func (va voiceAction) perform(ctx *Context) (err error) {
 	vcID := ""
 	if ctx.VoiceChannel != nil {
 		vcID = ctx.VoiceChannel.ID

@@ -6,6 +6,22 @@ import (
 	"regexp"
 )
 
+// Condition defines a set of requirements an environment should meet for an action to be performed on that environment
+type Condition struct {
+	Name string `json:"name"`
+	// e.g. MessageContext, VoiceStateContext
+	ContextType    int    `json:"ctype"`
+	Phrase         string `json:"phrase,omitempty"`
+	IsRegex        bool   `json:"isRegex,omitempty"`
+	GuildID        string `json:"guild,omitempty"`
+	TextChannelID  string `json:"textChannel,omitempty"`
+	VoiceChannelID string `json:"voiceChannel,omitempty"`
+	UserID         string `json:"user,omitempty"`
+	// e.g. textAction, quitAction
+	ActionType int    `json:"atype"`
+	Action     Action `json:"action"`
+}
+
 var conditions = []Condition{
 	{
 		ContextType: MessageContext,
@@ -178,6 +194,10 @@ var conditions = []Condition{
 			file: `media/audio/vomit_help.dca`,
 		},
 	},
+}
+
+func (c Condition) persist() {
+	me.db.
 }
 
 // Load the audio frames for every audio file used in voice actions into memory
