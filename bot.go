@@ -5,11 +5,14 @@ Inspired by and modeled after github.com/hammerandchisel/airhornbot
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"github.com/dustin/go-humanize"
 	"log"
 	"math/rand"
 	"os"
+	"runtime"
 	"time"
 )
 
@@ -19,6 +22,7 @@ const (
 	mainChannelID    = "140142172979724288"
 	memesChannelID   = "305119943995686913"
 	openmicChannelID = "322881248366428161"
+	ttyChannelID     = "322927672810536970"
 	willowID         = "140136792849514496"
 	shyronnieID      = "140898747264663552"
 )
@@ -182,6 +186,48 @@ func (b *Bot) Listen(guildID string, channelID string, duration time.Duration) (
 	return
 }
 
+// Stats collects runtime information about the bot
+type Stats struct {
+	host       string
+	cpus       int
+	memory     uint64
+	goroutines int
+	goversion  string
+	guilds     int
+	voices     int
+}
+
+// Stats gets up-to-date runtime information about the bot
+func (b Bot) Stats() *Stats {
+	// TODO get more detailed CPU information
+	s := &Stats{}
+	s.host, _ = os.Hostname()
+	s.cpus = runtime.NumCPU()
+	m := &runtime.MemStats{}
+	runtime.ReadMemStats(m)
+	s.memory = m.Sys
+	s.goroutines = runtime.NumGoroutine()
+	s.goversion = runtime.Version()
+	s.guilds = len(b.session.State.Guilds)
+	s.voices = len(b.voiceboxes)
+	return s
+}
+
+func (s Stats) String() string {
+	// TODO checkout text/tabwriter
+	b := &bytes.Buffer{}
+	fmt.Fprintf(b, "```\n")
+	fmt.Fprintf(b, "Host: %v\n", s.host)
+	fmt.Fprintf(b, "Go: %v\n", s.goversion)
+	fmt.Fprintf(b, "CPUs: %v\n", s.cpus)
+	fmt.Fprintf(b, "Memory: %v\n", humanize.Bytes(s.memory))
+	fmt.Fprintf(b, "Routines: %v\n", s.goroutines)
+	fmt.Fprintf(b, "Guilds: %v\n", s.guilds)
+	fmt.Fprintf(b, "Voices: %v\n", s.voices)
+	fmt.Fprintf(b, "```\n")
+	return b.String()
+}
+
 func onReady(s *discordgo.Session, r *discordgo.Ready) {
 	log.Printf("Ready: %#v\n", r)
 	for _, g := range r.Guilds {
@@ -291,7 +337,7 @@ func randomVoiceInOpenMic(quit <-chan struct{}) {
 			return
 		default:
 		}
-		wait = randomNormalWait(120, 30)
+		wait = randomNormalWait(420, 90)
 		log.Printf("Next random voice in %f seconds", wait.Seconds())
 		select {
 		case <-quit:

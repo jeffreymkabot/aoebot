@@ -140,6 +140,13 @@ var conditions = []Condition{
 		},
 	},
 	{
+		ContextType:   MessageContext,
+		Phrase:        `aoebot stats`,
+		TextChannelID: ttyChannelID,
+		ActionType:    stats,
+		Action:        &statsAction{},
+	},
+	{
 		ContextType:    adHocContext,
 		VoiceChannelID: openmicChannelID,
 		ActionType:     say,

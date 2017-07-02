@@ -32,6 +32,7 @@ const (
 	write = iota
 	say
 	react
+	stats
 	reconnect
 	restart
 	quit
@@ -147,6 +148,9 @@ type voiceAction struct {
 	buffer [][]byte
 }
 
+type statsAction struct {
+}
+
 type reconnectVoiceAction struct {
 	content string
 }
@@ -253,6 +257,11 @@ func (va *voiceAction) load() error {
 
 func (va voiceAction) String() string {
 	return fmt.Sprintf("%v", va.file)
+}
+
+func (sa statsAction) perform(ctx *Context) (err error) {
+	me.Write(ctx.TextChannel.ID, me.Stats().String(), false)
+	return
 }
 
 func (rva reconnectVoiceAction) perform(ctx *Context) (err error) {
