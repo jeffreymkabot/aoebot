@@ -7,7 +7,9 @@ package main
 import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
-	_ "github.com/dustin/go-humanize"
+	// "gopkg.in/mgo.v2"
+	// _ "gopkg.in/mgo.v2/bson"
+	// "github.com/dustin/go-humanize"
 	"log"
 	"math/rand"
 	"os"
@@ -27,8 +29,10 @@ const (
 
 // Bot represents a discord bot
 type Bot struct {
-	token      string
-	owner      string
+	token string
+	owner string
+	// mongo string
+	// db         *mgo.Session
 	session    *discordgo.Session
 	self       *discordgo.User
 	routines   []*botroutine
@@ -41,8 +45,9 @@ type Bot struct {
 // NewBot initializes a bot
 func NewBot(token string, owner string) *Bot {
 	b := &Bot{
-		token:      token,
-		owner:      owner,
+		token: token,
+		owner: owner,
+		// mongo:      mongo,
 		routines:   []*botroutine{},
 		unhandlers: []func(){},
 		voiceboxes: make(map[string]*voicebox),
@@ -57,6 +62,7 @@ func (b *Bot) Wakeup() (err error) {
 	if b.session != nil {
 		b.Sleep()
 	}
+
 	b.session, err = discordgo.New("Bot " + b.token)
 	if err != nil {
 		return

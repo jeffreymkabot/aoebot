@@ -10,16 +10,16 @@ import (
 type Condition struct {
 	Name string `json:"name"`
 	// e.g. MessageContext, VoiceStateContext
-	ContextType    int    `json:"ctype"`
-	Phrase         string `json:"phrase,omitempty"`
-	IsRegex        bool   `json:"isRegex,omitempty"`
-	GuildID        string `json:"guild,omitempty"`
-	TextChannelID  string `json:"textChannel,omitempty"`
-	VoiceChannelID string `json:"voiceChannel,omitempty"`
-	UserID         string `json:"user,omitempty"`
+	ContextType    int    `json:"ctype" bson:"ctype"`
+	Phrase         string `json:"phrase,omitempty" bson:"phrase,omitempty"`
+	IsRegex        bool   `json:"isRegex,omitempty" bson:"isRegex,omitempty"`
+	GuildID        string `json:"guild,omitempty" bson:"guild,omitempty"`
+	TextChannelID  string `json:"textChannel,omitempty" bson:"textChannel,omitempty"`
+	VoiceChannelID string `json:"voiceChannel,omitempty" bson:"voiceChannel,omitempty"`
+	UserID         string `json:"user,omitempty" bson:"user,omitempty"`
 	// e.g. textAction, quitAction
-	ActionType int    `json:"atype"`
-	Action     Action `json:"action"`
+	ActionType int    `json:"atype" bson:"atype"`
+	Action     Action `json:"action" bson:"action"`
 }
 
 var conditions = []Condition{
@@ -194,10 +194,6 @@ var conditions = []Condition{
 			file: `media/audio/vomit_help.dca`,
 		},
 	},
-}
-
-func (c Condition) persist() {
-	me.db.
 }
 
 // Load the audio frames for every audio file used in voice actions into memory

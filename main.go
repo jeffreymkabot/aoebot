@@ -33,8 +33,10 @@ func prepare() (err error) {
 func main() {
 	var token string
 	var owner string
+	// var mongo string
 	flag.StringVar(&token, "t", "", "Auth Token")
 	flag.StringVar(&owner, "o", "", "Admin User ID")
+	// flag.StringVar(&mongo, "m", "", "MongoDB URL")
 	flag.Parse()
 	if token == "" || owner == "" {
 		flag.Usage()
