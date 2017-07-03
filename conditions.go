@@ -27,24 +27,24 @@ var conditions = []Condition{
 		ContextType: MessageContext,
 		Phrase:      `?testwrite`,
 		ActionType:  write,
-		Action: &textAction{
-			content: `hello world`,
+		Action: &WriteAction{
+			Content: `hello world`,
 		},
 	},
 	{
 		ContextType: MessageContext,
 		Phrase:      `?testvoice`,
 		ActionType:  say,
-		Action: &voiceAction{
-			file: `media/audio/40 enemy.dca`,
+		Action: &SayAction{
+			File: `media/audio/40 enemy.dca`,
 		},
 	},
 	{
 		ContextType: MessageContext,
 		Phrase:      `?testreact`,
 		ActionType:  react,
-		Action: &emojiReactionAction{
-			emoji: `🤖`,
+		Action: &ReactAction{
+			Emoji: `🤖`,
 		},
 	},
 	{
@@ -52,8 +52,8 @@ var conditions = []Condition{
 		Phrase:      `\baoebot\b`,
 		IsRegex:     true,
 		ActionType:  react,
-		Action: &emojiReactionAction{
-			emoji: `🤖`,
+		Action: &ReactAction{
+			Emoji: `🤖`,
 		},
 	},
 	{
@@ -61,8 +61,8 @@ var conditions = []Condition{
 		Phrase:      `\bheroes of the storm\b`,
 		IsRegex:     true,
 		ActionType:  write,
-		Action: &textAction{
-			content: `🤢`,
+		Action: &WriteAction{
+			Content: `🤢`,
 		},
 	},
 	{
@@ -70,8 +70,8 @@ var conditions = []Condition{
 		Phrase:      `\bhots\b`,
 		IsRegex:     true,
 		ActionType:  react,
-		Action: &emojiReactionAction{
-			emoji: `🤢`,
+		Action: &ReactAction{
+			Emoji: `🤢`,
 		},
 	},
 	{
@@ -79,9 +79,9 @@ var conditions = []Condition{
 		Phrase:      `\bsmash\b`,
 		IsRegex:     true,
 		ActionType:  write,
-		Action: &textAction{
-			content: `Smash that ready button!`,
-			tts:     true,
+		Action: &WriteAction{
+			Content: `Smash that ready button!`,
+			TTS:     true,
 		},
 	},
 	{
@@ -89,8 +89,8 @@ var conditions = []Condition{
 		Phrase:      `\bbruh\b`,
 		IsRegex:     true,
 		ActionType:  say,
-		Action: &voiceAction{
-			file: `media/audio/H3H3_BRUH.dca`,
+		Action: &SayAction{
+			File: `media/audio/H3H3_BRUH.dca`,
 		},
 	},
 	{
@@ -98,24 +98,24 @@ var conditions = []Condition{
 		Phrase:      `\bnice shades\b`,
 		IsRegex:     true,
 		ActionType:  say,
-		Action: &voiceAction{
-			file: `media/audio/my_vision_is_augmented.dca`,
+		Action: &SayAction{
+			File: `media/audio/my_vision_is_augmented.dca`,
 		},
 	},
 	{
 		ContextType: VoiceStateContext,
 		UserID:      willowID,
 		ActionType:  say,
-		Action: &voiceAction{
-			file: `media/audio/41 neutral.dca`,
+		Action: &SayAction{
+			File: `media/audio/41 neutral.dca`,
 		},
 	},
 	{
 		ContextType: VoiceStateContext,
 		UserID:      shyronnieID,
 		ActionType:  say,
-		Action: &voiceAction{
-			file: `media/audio/shyronnie1.dca`,
+		Action: &SayAction{
+			File: `media/audio/shyronnie1.dca`,
 		},
 	},
 	{
@@ -123,8 +123,8 @@ var conditions = []Condition{
 		Phrase:      `aoebot reconnect voice`,
 		UserID:      willowID,
 		ActionType:  reconnect,
-		Action: &reconnectVoiceAction{
-			content: `Sure thing dad 🙂`,
+		Action: &ReconnectVoiceAction{
+			Content: `Sure thing dad 🙂`,
 		},
 	},
 	{
@@ -132,8 +132,8 @@ var conditions = []Condition{
 		Phrase:      `aoebot restart`,
 		UserID:      willowID,
 		ActionType:  reconnect,
-		Action: &restartAction{
-			content: `Okay dad 👀`,
+		Action: &RestartAction{
+			Content: `Okay dad 👀`,
 		},
 	},
 	{
@@ -141,8 +141,8 @@ var conditions = []Condition{
 		Phrase:      `aoebot go to sleep`,
 		UserID:      willowID,
 		ActionType:  quit,
-		Action: &quitAction{
-			content: `Are you sure dad? 😳 💤`,
+		Action: &QuitAction{
+			Content: `Are you sure dad? 😳 💤`,
 		},
 	},
 	{
@@ -150,9 +150,9 @@ var conditions = []Condition{
 		Phrase:      `aoebot kill yourself`,
 		UserID:      willowID,
 		ActionType:  quit,
-		Action: &quitAction{
-			content: `💀`,
-			force:   true,
+		Action: &QuitAction{
+			Content: `💀`,
+			Force:   true,
 		},
 	},
 	{
@@ -160,38 +160,38 @@ var conditions = []Condition{
 		Phrase:        `aoebot stats`,
 		TextChannelID: ttyChannelID,
 		ActionType:    stats,
-		Action:        &statsAction{},
+		Action:        &StatsAction{},
 	},
 	{
 		ContextType:    adHocContext,
 		VoiceChannelID: openmicChannelID,
 		ActionType:     say,
-		Action: &voiceAction{
-			file: `media/audio/vomit_1.dca`,
+		Action: &SayAction{
+			File: `media/audio/vomit_1.dca`,
 		},
 	},
 	{
 		ContextType:    adHocContext,
 		VoiceChannelID: openmicChannelID,
 		ActionType:     say,
-		Action: &voiceAction{
-			file: `media/audio/vomit_cough.dca`,
+		Action: &SayAction{
+			File: `media/audio/vomit_cough.dca`,
 		},
 	},
 	{
 		ContextType:    adHocContext,
 		VoiceChannelID: openmicChannelID,
 		ActionType:     say,
-		Action: &voiceAction{
-			file: `media/audio/vomit_long.dca`,
+		Action: &SayAction{
+			File: `media/audio/vomit_long.dca`,
 		},
 	},
 	{
 		ContextType:    adHocContext,
 		VoiceChannelID: openmicChannelID,
 		ActionType:     say,
-		Action: &voiceAction{
-			file: `media/audio/vomit_help.dca`,
+		Action: &SayAction{
+			File: `media/audio/vomit_help.dca`,
 		},
 	},
 }
@@ -199,7 +199,7 @@ var conditions = []Condition{
 // Load the audio frames for every audio file used in voice actions into memory
 func loadVoiceActionFiles() error {
 	for _, c := range conditions {
-		va, ok := c.Action.(*voiceAction)
+		va, ok := c.Action.(*SayAction)
 		if ok {
 			// TODO could go va.load() for async
 			err := va.load()
@@ -233,8 +233,8 @@ func createAoeChatCommands() error {
 				Phrase:      fmt.Sprintf(`\b%v\b`, phrase),
 				IsRegex:     true,
 				ActionType:  say,
-				Action: &voiceAction{
-					file: "media/audio/" + fname,
+				Action: &SayAction{
+					File: "media/audio/" + fname,
 				},
 			}
 			conditions = append(conditions, c)
