@@ -45,10 +45,9 @@ type Bot struct {
 // NewBot initializes a bot
 func NewBot(token string, owner string, dbURL string) *Bot {
 	b := &Bot{
-		token: token,
-		owner: owner,
-		dbURL: dbURL,
-		// mongo:      mongo,
+		token:      token,
+		owner:      owner,
+		dbURL:      dbURL,
 		routines:   []*botroutine{},
 		unhandlers: []func(){},
 		voiceboxes: make(map[string]*voicebox),
@@ -57,11 +56,11 @@ func NewBot(token string, owner string, dbURL string) *Bot {
 	return b
 }
 
-// Wakeup initiates a new discord session
-// Closes any session that may already exist
+// Wakeup initiates a new db session and discord session
 func (b *Bot) Wakeup() (err error) {
-	if b.session != nil {
-		b.Sleep()
+	b.mongo, err = mgo.Dial(b.dbURL)
+	if err != nil {
+		return
 	}
 
 	b.session, err = discordgo.New("Bot " + b.token)
@@ -82,7 +81,7 @@ func (b *Bot) Wakeup() (err error) {
 	return
 }
 
-// Sleep closes the discord session, removes event handlers, and stops all associated workers.
+// Sleep removes event handlers, stops all workers, closes the discord session, and closes the db session.
 func (b *Bot) Sleep() {
 	log.Printf("Closing session...")
 
@@ -93,14 +92,6 @@ func (b *Bot) Sleep() {
 	}
 	b.unhandlers = b.unhandlers[len(b.unhandlers):]
 
-	for k, vb := range b.voiceboxes {
-		if vb.quit != nil {
-			close(vb.quit)
-			vb.quit = nil
-		}
-		delete(b.voiceboxes, k)
-	}
-
 	for _, r := range b.routines {
 		if r.quit != nil {
 			close(r.quit)
@@ -109,9 +100,20 @@ func (b *Bot) Sleep() {
 	}
 	b.routines = b.routines[len(b.routines):]
 
+	for k, vb := range b.voiceboxes {
+		if vb.quit != nil {
+			close(vb.quit)
+			vb.quit = nil
+		}
+		delete(b.voiceboxes, k)
+	}
+
 	// close the session after closing voice boxes since closing voiceboxes attempts disconnect
 	b.session.Close()
 	b.session = nil
+
+	b.mongo.Close()
+	b.mongo = nil
 
 	log.Printf("...closed session.")
 }

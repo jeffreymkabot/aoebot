@@ -6,6 +6,7 @@ package main
 
 import (
 	"flag"
+	"gopkg.in/mgo.v2/bson"
 	"log"
 	"os"
 	"os/signal"
@@ -30,12 +31,29 @@ func prepare() (err error) {
 	return
 }
 
+func exportConditions() {
+	coll := me.mongo.DB("aoebot").C("conditions")
+	info, err := coll.RemoveAll(bson.M{})
+	log.Printf("Removed all in conditions %#v", info)
+	if err != nil {
+		log.Printf("Error in remove all %v", err)
+	}
+	for c := range conditions {
+		log.Printf("Insert condition %#v", c)
+		coll.Insert(c)
+		if err != nil {
+			log.Printf("Error in insert condition %v", err)
+		}
+	}
+}
+
 func main() {
 	token := flag.String("t", "", "Auth Token")
 	owner := flag.String("o", "", "Admin User ID")
-	dbURL := flag.String("d", "", "MongoDB URL")
+	dbURL := flag.String("m", "", "MongoDB URL")
+	doExport := flag.Bool("e", false, "Export conditions only")
 	flag.Parse()
-	if *token == "" || *owner == "" {
+	if *token == "" || *owner == "" || *dbURL == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -54,6 +72,12 @@ func main() {
 		log.Fatalf("Error in wakeup: %#v\n", err)
 	}
 	defer me.Die()
+
+	if *doExport {
+		log.Println("Do export")
+		exportConditions()
+		return
+	}
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill)
