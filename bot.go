@@ -7,7 +7,7 @@ package main
 import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
-	// "gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2"
 	// _ "gopkg.in/mgo.v2/bson"
 	// "github.com/dustin/go-humanize"
 	"log"
@@ -29,10 +29,10 @@ const (
 
 // Bot represents a discord bot
 type Bot struct {
-	token string
-	owner string
-	// mongo string
-	// db         *mgo.Session
+	token      string
+	owner      string
+	dbURL      string
+	mongo      *mgo.Session
 	session    *discordgo.Session
 	self       *discordgo.User
 	routines   []*botroutine
@@ -43,10 +43,11 @@ type Bot struct {
 }
 
 // NewBot initializes a bot
-func NewBot(token string, owner string) *Bot {
+func NewBot(token string, owner string, dbURL string) *Bot {
 	b := &Bot{
 		token: token,
 		owner: owner,
+		dbURL: dbURL,
 		// mongo:      mongo,
 		routines:   []*botroutine{},
 		unhandlers: []func(){},

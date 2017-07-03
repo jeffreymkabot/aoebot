@@ -31,14 +31,11 @@ func prepare() (err error) {
 }
 
 func main() {
-	var token string
-	var owner string
-	// var mongo string
-	flag.StringVar(&token, "t", "", "Auth Token")
-	flag.StringVar(&owner, "o", "", "Admin User ID")
-	// flag.StringVar(&mongo, "m", "", "MongoDB URL")
+	token := flag.String("t", "", "Auth Token")
+	owner := flag.String("o", "", "Admin User ID")
+	dbURL := flag.String("d", "", "MongoDB URL")
 	flag.Parse()
-	if token == "" || owner == "" {
+	if *token == "" || *owner == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -50,7 +47,7 @@ func main() {
 		log.Fatalf("Error in prepare: %#v\n", err)
 	}
 
-	me = NewBot(token, owner)
+	me = NewBot(*token, *owner, *dbURL)
 
 	err = me.Wakeup()
 	if err != nil {
