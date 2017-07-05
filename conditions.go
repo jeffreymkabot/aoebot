@@ -34,12 +34,13 @@ const (
 )
 
 var ActionF = map[ActionType]func() Action{
-	write:   func() Action { return &WriteAction{} },
-	say:     func() Action { return &SayAction{} },
-	react:   func() Action { return &ReactAction{} },
-	stats:   func() Action { return &StatsAction{} },
-	restart: func() Action { return &RestartAction{} },
-	quit:    func() Action { return &QuitAction{} },
+	write:     func() Action { return &WriteAction{} },
+	say:       func() Action { return &SayAction{} },
+	react:     func() Action { return &ReactAction{} },
+	stats:     func() Action { return &StatsAction{} },
+	reconnect: func() Action { return &ReconnectVoiceAction{} },
+	restart:   func() Action { return &RestartAction{} },
+	quit:      func() Action { return &QuitAction{} },
 }
 
 type ActionEnvelope struct {
@@ -59,7 +60,7 @@ func (ae *ActionEnvelope) SetBSON(raw bson.Raw) error {
 	}
 	if f, ok := ActionF[tmp.Type]; ok {
 		a := f()
-		tmp.Action.Unmarshal(&a)
+		tmp.Action.Unmarshal(a)
 		ae.Action = a
 		ae.Type = tmp.Type
 	} else {
@@ -196,7 +197,7 @@ var conditions = []Condition{
 		Phrase:      `aoebot restart`,
 		UserID:      willowID,
 		Action: ActionEnvelope{
-			Type: reconnect,
+			Type: restart,
 			Action: &RestartAction{
 				Content: `Okay dad 👀`,
 			},
@@ -302,7 +303,7 @@ func createAoeChatCommands() error {
 		return err
 	}
 
-	re := regexp.MustCompile(`^0*(\d+)(.*)\.dca$`)
+	re := regexp.MustCompile(`^0*(\d+)\s?(.*)\.dca$`)
 
 	for _, file := range files {
 		fname := file.Name()

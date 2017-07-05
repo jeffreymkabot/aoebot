@@ -67,6 +67,11 @@ func (sa SayAction) perform(ctx *Context) (err error) {
 		return
 	}
 
+	// TODO cache file contents from load
+	err = sa.load()
+	if err != nil {
+		return
+	}
 	err = me.Say(ctx.Guild.ID, vcID, sa.buffer)
 	return
 }

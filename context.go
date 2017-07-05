@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"gopkg.in/mgo.v2/bson"
+	"log"
 	"regexp"
 	"strings"
 )
@@ -85,7 +87,13 @@ func (ctx Context) Actions() []Action {
 	actions := []Action{}
 	conditions := []Condition{}
 	coll := me.mongo.DB("aoebot").C("conditions")
-	coll.Find(ctx.Query()).All(&conditions)
+	query := ctx.Query()
+	jsonQuery, _ := json.Marshal(query)
+	log.Printf("Using query %s", jsonQuery)
+	err := coll.Find(query).All(&conditions)
+	if err != nil {
+		log.Printf("Error in query %v", err)
+	}
 	for _, c := range conditions {
 		if c.RegexPhrase != "" && ctx.TextMessage != nil {
 			if regexp.MustCompile(c.RegexPhrase).MatchString(strings.ToLower(ctx.TextMessage.Content)) {
@@ -95,6 +103,7 @@ func (ctx Context) Actions() []Action {
 			actions = append(actions, c.Action.Action)
 		}
 	}
+	log.Printf("Found actions %v", actions)
 	return actions
 }
 
