@@ -6,20 +6,12 @@ import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	_ "github.com/fatih/structs"
+	// "gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 	"io"
 	"os"
 	"regexp"
 	"strings"
-)
-
-const (
-	write = iota
-	say
-	react
-	stats
-	reconnect
-	restart
-	quit
 )
 
 // Action can be performed given the context (environment) of its trigger
@@ -91,7 +83,7 @@ func (ctx Context) IsOwnContext() bool {
 }
 
 // Actions returns a list of actions matching a context
-func (ctx *Context) Actions() []Action {
+func (ctx Context) Actions() []Action {
 	actions := []Action{}
 	for _, c := range conditions {
 		if ctx.Satisfies(c) {
@@ -101,9 +93,21 @@ func (ctx *Context) Actions() []Action {
 	return actions
 }
 
+func (ctx Context) ActionsQuery() []Action {
+	actions := []Action{}
+	coll := me.mongo.DB("aoebot").C("conditions")
+	coll.Find(ctx.Query()).All(&actions)
+	return actions
+}
+
+// TODO
+func (ctx Context) Query() bson.M {
+	return bson.M{}
+}
+
 // Satisfies is true when the environment described in a Context meets the requirements defined in a Condition
 // Some conditions are more specific than others
-func (ctx *Context) Satisfies(c Condition) bool {
+func (ctx Context) Satisfies(c Condition) bool {
 	typeMatch := ctx.Type == c.ContextType
 	guildMatch := c.GuildID == "" || (ctx.Guild != nil && ctx.Guild.ID == c.GuildID)
 	userMatch := c.UserID == "" || (ctx.Author != nil && ctx.Author.ID == c.UserID)

@@ -38,13 +38,23 @@ func exportConditions() {
 	if err != nil {
 		log.Printf("Error in remove all %v", err)
 	}
-	for c := range conditions {
-		log.Printf("Insert condition %#v", c)
+	for i, c := range conditions {
+		log.Printf("Insert condition %v %#v", i, c)
 		coll.Insert(c)
 		if err != nil {
 			log.Printf("Error in insert condition %v", err)
 		}
 	}
+}
+
+func testQuery() {
+	coll := me.mongo.DB("aoebot").C("conditions")
+	c := Condition{}
+	err := coll.Find(bson.M{"phrase": "?testwrite"}).One(&c)
+	if err != nil {
+		log.Printf("Error in find one %v", err)
+	}
+	log.Printf("Find one %#v", c)
 }
 
 func main() {
@@ -76,6 +86,7 @@ func main() {
 	if *doExport {
 		log.Println("Do export")
 		exportConditions()
+		testQuery()
 		return
 	}
 
