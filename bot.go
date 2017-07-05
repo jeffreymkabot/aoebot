@@ -309,7 +309,7 @@ func randomVoiceInOpenMic(quit <-chan struct{}) {
 			return
 		case <-time.After(wait):
 			ctx := &Context{}
-			ctx.Type = adHocContext
+			ctx.Type = adhoc
 			ctx.VoiceChannel, err = me.session.State.Channel(openmicChannelID)
 			if err != nil {
 				log.Printf("Error resolve open mic channel %v", err)

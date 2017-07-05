@@ -11,9 +11,9 @@ import (
 type Condition struct {
 	Name string `json:"name"`
 	// e.g. MessageContext, VoiceStateContext
-	ContextType    int            `json:"ctype" bson:"ctype"`
+	ContextType    ContextType    `json:"type" bson:"type"`
 	Phrase         string         `json:"phrase,omitempty" bson:"phrase,omitempty"`
-	IsRegex        bool           `json:"isRegex,omitempty" bson:"isRegex,omitempty"`
+	RegexPhrase    string         `json:"regex,omitempty" bson:"regex,omitempty"`
 	GuildID        string         `json:"guild,omitempty" bson:"guild,omitempty"`
 	TextChannelID  string         `json:"textChannel,omitempty" bson:"textChannel,omitempty"`
 	VoiceChannelID string         `json:"voiceChannel,omitempty" bson:"voiceChannel,omitempty"`
@@ -70,7 +70,7 @@ func (ae *ActionEnvelope) SetBSON(raw bson.Raw) error {
 
 var conditions = []Condition{
 	{
-		ContextType: MessageContext,
+		ContextType: message,
 		Phrase:      `?testwrite`,
 		Action: ActionEnvelope{
 			Type: write,
@@ -80,7 +80,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
+		ContextType: message,
 		Phrase:      `?testvoice`,
 		Action: ActionEnvelope{
 			Type: say,
@@ -90,7 +90,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
+		ContextType: message,
 		Phrase:      `?testreact`,
 		Action: ActionEnvelope{
 			Type: react,
@@ -100,9 +100,8 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
-		Phrase:      `\baoebot\b`,
-		IsRegex:     true,
+		ContextType: message,
+		RegexPhrase: `\baoebot\b`,
 		Action: ActionEnvelope{
 			Type: react,
 			Action: &ReactAction{
@@ -111,9 +110,8 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
-		Phrase:      `\bheroes of the storm\b`,
-		IsRegex:     true,
+		ContextType: message,
+		RegexPhrase: `\bheroes of the storm\b`,
 		Action: ActionEnvelope{
 			Type: write,
 			Action: &WriteAction{
@@ -122,9 +120,8 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
-		Phrase:      `\bhots\b`,
-		IsRegex:     true,
+		ContextType: message,
+		RegexPhrase: `\bhots\b`,
 		Action: ActionEnvelope{
 			Type: react,
 			Action: &ReactAction{
@@ -133,9 +130,8 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
-		Phrase:      `\bsmash\b`,
-		IsRegex:     true,
+		ContextType: message,
+		RegexPhrase: `\bsmash\b`,
 		Action: ActionEnvelope{
 			Type: write,
 			Action: &WriteAction{
@@ -145,9 +141,8 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
-		Phrase:      `\bbruh\b`,
-		IsRegex:     true,
+		ContextType: message,
+		RegexPhrase: `\bbruh\b`,
 		Action: ActionEnvelope{
 			Type: say,
 			Action: &SayAction{
@@ -156,9 +151,8 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
-		Phrase:      `\bnice shades\b`,
-		IsRegex:     true,
+		ContextType: message,
+		RegexPhrase: `\bnice shades\b`,
 		Action: ActionEnvelope{
 			Type: say,
 			Action: &SayAction{
@@ -167,7 +161,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: VoiceStateContext,
+		ContextType: voicestate,
 		UserID:      willowID,
 		Action: ActionEnvelope{
 			Type: say,
@@ -177,7 +171,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: VoiceStateContext,
+		ContextType: voicestate,
 		UserID:      shyronnieID,
 		Action: ActionEnvelope{
 			Type: say,
@@ -187,7 +181,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
+		ContextType: message,
 		Phrase:      `aoebot reconnect voice`,
 		UserID:      willowID,
 		Action: ActionEnvelope{
@@ -198,7 +192,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
+		ContextType: message,
 		Phrase:      `aoebot restart`,
 		UserID:      willowID,
 		Action: ActionEnvelope{
@@ -209,7 +203,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
+		ContextType: message,
 		Phrase:      `aoebot go to sleep`,
 		UserID:      willowID,
 		Action: ActionEnvelope{
@@ -220,7 +214,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType: MessageContext,
+		ContextType: message,
 		Phrase:      `aoebot kill yourself`,
 		UserID:      willowID,
 		Action: ActionEnvelope{
@@ -232,7 +226,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType:   MessageContext,
+		ContextType:   message,
 		Phrase:        `aoebot stats`,
 		TextChannelID: ttyChannelID,
 		Action: ActionEnvelope{
@@ -241,7 +235,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType:    adHocContext,
+		ContextType:    adhoc,
 		VoiceChannelID: openmicChannelID,
 		Action: ActionEnvelope{
 			Type: say,
@@ -251,7 +245,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType:    adHocContext,
+		ContextType:    adhoc,
 		VoiceChannelID: openmicChannelID,
 		Action: ActionEnvelope{
 			Type: say,
@@ -261,7 +255,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType:    adHocContext,
+		ContextType:    adhoc,
 		VoiceChannelID: openmicChannelID,
 		Action: ActionEnvelope{
 			Type: say,
@@ -271,7 +265,7 @@ var conditions = []Condition{
 		},
 	},
 	{
-		ContextType:    adHocContext,
+		ContextType:    adhoc,
 		VoiceChannelID: openmicChannelID,
 		Action: ActionEnvelope{
 			Type: say,
@@ -318,9 +312,8 @@ func createAoeChatCommands() error {
 			name := match[2]
 			c := Condition{
 				Name:        name,
-				ContextType: MessageContext,
-				Phrase:      fmt.Sprintf(`\b%v\b`, phrase),
-				IsRegex:     true,
+				ContextType: message,
+				RegexPhrase: fmt.Sprintf(`\b%v\b`, phrase),
 				Action: ActionEnvelope{
 					Type: say,
 					Action: &SayAction{
