@@ -14,17 +14,6 @@ import (
 	"time"
 )
 
-const (
-	// globals are only for convienience while experiment
-	// values will eventually be encoded with action conditions in a database
-	mainChannelID    = "140142172979724288"
-	memesChannelID   = "305119943995686913"
-	openmicChannelID = "322881248366428161"
-	ttyChannelID     = "322927672810536970"
-	willowID         = "140136792849514496"
-	shyronnieID      = "140898747264663552"
-)
-
 // Bot represents a discord bot
 type Bot struct {
 	token      string
