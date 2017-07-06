@@ -235,8 +235,9 @@ func containsKeyword(s []string, t ...string) bool {
 	return false
 }
 
+// TODO this doesn't work on 32-bit OS
 func randomNormalWait(m float64, s float64) time.Duration {
 	r := s*rand.NormFloat64() + m
-	r = math.Max(r, 0)
+	r = math.Max(r, 300)
 	return time.Duration(int(r) * int(time.Second))
 }

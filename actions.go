@@ -24,7 +24,7 @@ const (
 
 // Action can be performed given the environment of its trigger
 type Action interface {
-	perform(env *Environment) error
+	perform(b *Bot, env *Environment) error
 	kind() ActionType
 }
 
@@ -35,8 +35,8 @@ type WriteAction struct {
 }
 
 // type something to the text channel of the original environment
-func (wa WriteAction) perform(env *Environment) (err error) {
-	err = me.Write(env.TextChannel.ID, wa.Content, wa.TTS)
+func (wa WriteAction) perform(b *Bot, env *Environment) (err error) {
+	err = b.Write(env.TextChannel.ID, wa.Content, wa.TTS)
 	return
 }
 
@@ -56,8 +56,8 @@ type ReactAction struct {
 	Emoji string
 }
 
-func (ra ReactAction) perform(env *Environment) (err error) {
-	err = me.React(env.TextChannel.ID, env.TextMessage.ID, ra.Emoji)
+func (ra ReactAction) perform(b *Bot, env *Environment) (err error) {
+	err = b.React(env.TextChannel.ID, env.TextMessage.ID, ra.Emoji)
 	return
 }
 
@@ -76,7 +76,7 @@ type SayAction struct {
 }
 
 // say something to the voice channel of the user in the original environment
-func (sa SayAction) perform(env *Environment) (err error) {
+func (sa SayAction) perform(b *Bot, env *Environment) (err error) {
 	vcID := ""
 	if env.VoiceChannel != nil {
 		vcID = env.VoiceChannel.ID
@@ -92,7 +92,7 @@ func (sa SayAction) perform(env *Environment) (err error) {
 	if err != nil {
 		return
 	}
-	err = me.Say(env.Guild.ID, vcID, sa.buffer)
+	err = b.Say(env.Guild.ID, vcID, sa.buffer)
 	return
 }
 
@@ -161,8 +161,8 @@ func (sa SayAction) String() string {
 type StatsAction struct {
 }
 
-func (sa StatsAction) perform(env *Environment) (err error) {
-	me.Write(env.TextChannel.ID, me.Stats().String(), false)
+func (sa StatsAction) perform(b *Bot, env *Environment) (err error) {
+	b.Write(env.TextChannel.ID, b.Stats().String(), false)
 	return
 }
 
@@ -175,11 +175,11 @@ type ReconnectVoiceAction struct {
 	Content string
 }
 
-func (rva ReconnectVoiceAction) perform(env *Environment) (err error) {
+func (rva ReconnectVoiceAction) perform(b *Bot, env *Environment) (err error) {
 	if rva.Content != "" {
-		_ = me.Write(env.TextChannel.ID, rva.Content, false)
+		_ = b.Write(env.TextChannel.ID, rva.Content, false)
 	}
-	me.SpeakTo(env.Guild)
+	b.SpeakTo(env.Guild)
 	return
 }
 
@@ -196,12 +196,12 @@ type RestartAction struct {
 	Content string
 }
 
-func (ra RestartAction) perform(env *Environment) (err error) {
+func (ra RestartAction) perform(b *Bot, env *Environment) (err error) {
 	if ra.Content != "" {
-		_ = me.Write(env.TextChannel.ID, ra.Content, false)
+		_ = b.Write(env.TextChannel.ID, ra.Content, false)
 	}
-	me.Sleep()
-	me.Wakeup()
+	b.Sleep()
+	b.Wakeup()
 	return
 }
 
@@ -219,14 +219,14 @@ type QuitAction struct {
 	Force   bool
 }
 
-func (qa QuitAction) perform(env *Environment) (err error) {
+func (qa QuitAction) perform(b *Bot, env *Environment) (err error) {
 	if qa.Content != "" {
-		_ = me.Write(env.TextChannel.ID, qa.Content, false)
+		_ = b.Write(env.TextChannel.ID, qa.Content, false)
 	}
 	if qa.Force {
-		me.ForceDie()
+		b.ForceDie()
 	} else {
-		me.Die()
+		b.Die()
 	}
 	return
 }
@@ -245,6 +245,6 @@ func (qa QuitAction) String() string {
 type CreateActionAction struct {
 }
 
-func (caa CreateActionAction) perform(env *Environment) error {
+func (caa CreateActionAction) perform(b *Bot, env *Environment) error {
 	return nil
 }

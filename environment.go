@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"log"
 	"regexp"
@@ -31,32 +32,32 @@ type Environment struct {
 }
 
 // NewEnvironment creates a new environment based on a seed event/trigger
-func NewEnvironment(seed interface{}) (env *Environment, err error) {
+func NewEnvironment(session *discordgo.Session, seed interface{}) (env *Environment, err error) {
 	env = &Environment{}
 	switch s := seed.(type) {
 	case *discordgo.Message:
 		env.Type = message
 		env.TextMessage = s
 		env.Author = s.Author
-		env.TextChannel, err = me.session.State.Channel(s.ChannelID)
+		env.TextChannel, err = session.State.Channel(s.ChannelID)
 		if err != nil {
 			return
 		}
-		env.Guild, err = me.session.State.Guild(env.TextChannel.GuildID)
+		env.Guild, err = session.State.Guild(env.TextChannel.GuildID)
 		if err != nil {
 			return
 		}
 	case *discordgo.VoiceState:
 		env.Type = voicestate
-		env.Author, err = me.session.User(s.UserID)
+		env.Author, err = session.User(s.UserID)
 		if err != nil {
 			return
 		}
-		env.VoiceChannel, err = me.session.State.Channel(s.ChannelID)
+		env.VoiceChannel, err = session.State.Channel(s.ChannelID)
 		if err != nil {
 			return
 		}
-		env.Guild, err = me.session.State.Guild(env.VoiceChannel.GuildID)
+		env.Guild, err = session.State.Guild(env.VoiceChannel.GuildID)
 		if err != nil {
 			return
 		}
@@ -69,15 +70,15 @@ func NewEnvironment(seed interface{}) (env *Environment, err error) {
 
 // IsOwnEnvironment is true when an environment references the bot's own actions/behavior
 // This is useful to prevent the bot from reacting to itself
-func (env Environment) IsOwnEnvironment() bool {
-	return env.Author != nil && env.Author.ID == me.self.ID
+func (env Environment) IsOwnEnvironment(b Bot) bool {
+	return env.Author != nil && env.Author.ID == b.self.ID
 }
 
 // Actions retrieves the list of Actions whose conditions the environment satisfies
-func (env Environment) Actions() []Action {
+func (env Environment) Actions(db *mgo.Database) []Action {
 	actions := []Action{}
 	conditions := []Condition{}
-	coll := me.mongo.DB("aoebot").C("conditions")
+	coll := db.C("conditions")
 	query := env.query()
 	jsonQuery, _ := json.Marshal(query)
 	log.Printf("Using query %s", jsonQuery)

@@ -11,8 +11,6 @@ import (
 	"os/signal"
 )
 
-var me *Bot
-
 func main() {
 	token := flag.String("t", "", "Auth Token")
 	owner := flag.String("o", "", "Admin User ID")
@@ -25,7 +23,7 @@ func main() {
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 
-	me = NewBot(*token, *owner, *dbURL)
+	me := NewBot(*token, *owner, *dbURL)
 
 	err := me.Wakeup()
 	if err != nil {

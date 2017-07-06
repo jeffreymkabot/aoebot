@@ -14,12 +14,6 @@ import (
 	"time"
 )
 
-const (
-	// globals are only for convienience while experiment
-	// values will eventually be encoded with action conditions in a database
-	openmicChannelID = "322881248366428161"
-)
-
 // Bot represents a discord bot
 type Bot struct {
 	token      string
@@ -66,7 +60,7 @@ func (b *Bot) Wakeup() (err error) {
 		return
 	}
 
-	b.addHandlerOnce(onReady)
+	b.addHandlerOnce(b.onReady())
 	// begin listen to discord websocket for events
 	// invoking session.Open() triggers the discord ready event
 	err = b.session.Open()
@@ -186,97 +180,114 @@ func (b *Bot) Listen(guildID string, channelID string, duration time.Duration) (
 	return
 }
 
-func onReady(s *discordgo.Session, r *discordgo.Ready) {
-	log.Printf("Ready: %#v\n", r)
-	for _, g := range r.Guilds {
-		// exec independently per each guild g
-		me.SpeakTo(g)
-		for _, vs := range g.VoiceStates {
-			me.occupancy[vs.UserID] = vs.ChannelID
-		}
-	}
-	me.addHandler(onMessageCreate)
-	me.addHandler(onVoiceStateUpdate)
-	me.addRoutine(randomVoiceInOpenMic)
-}
-
-// Create a context around a voice state when the bot sees a new text message
-// Perform any actions that match that context
-func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Message == nil {
-		return
-	}
-	log.Printf("Saw a new message (%v) by user %v in channel %v", m.Message.Content, m.Message.Author, m.Message.ChannelID)
-	env, err := NewEnvironment(m.Message)
-	if err != nil {
-		log.Printf("Error resolving message context: %v", err)
-		return
-	}
-	if env.IsOwnEnvironment() {
-		return
-	}
-
-	actions := env.Actions()
-	for _, a := range actions {
-		// shadow a in the goroutine
-		// as a iterates through for loop while goroutine would otherwise try to use it in closure asynchronously
-		go func(a Action) {
-			defer func() {
-				if err := recover(); err != nil {
-					log.Printf("Recovered from panic in perform %T on message create: %v", a, err)
-				}
-			}()
-			log.Printf("Perform %T on message create: %v", a, a)
-			err := a.perform(env)
-			if err != nil {
-				log.Printf("Error in perform %T on message create: %v", a, err)
+func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
+	// Access b Bot through a closure
+	return func(s *discordgo.Session, r *discordgo.Ready) {
+		log.Printf("Ready: %#v\n", r)
+		for _, g := range r.Guilds {
+			// exec independently per each guild g
+			b.SpeakTo(g)
+			for _, vs := range g.VoiceStates {
+				b.occupancy[vs.UserID] = vs.ChannelID
 			}
-		}(a)
+		}
+		b.addHandler(b.onMessageCreate())
+		b.addHandler(b.onVoiceStateUpdate())
+		b.addRoutine(b.randomVoiceInOpenMic())
 	}
 }
 
-// Create a context around a voice state when the bot sees someone's voice channel change
-// Perform any actions that match that context
-func onVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
-	userID := v.VoiceState.UserID
-	channelID := v.VoiceState.ChannelID
-
-	if me.occupancy[userID] != channelID {
-		log.Printf("Saw user %v join the voice channel %v", userID, channelID)
-		// concurrent write vulnerability here
-		me.occupancy[userID] = channelID
-		if channelID == "" {
+func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreate) {
+	// Create a context around a voice state when the bot sees a new text message
+	// Perform any actions that match that contex
+	// Access b Bot through a closure
+	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
+		if m.Message == nil {
 			return
 		}
+		log.Printf("Saw a new message (%v) by user %v in channel %v", m.Message.Content, m.Message.Author, m.Message.ChannelID)
 
-		env, err := NewEnvironment(v.VoiceState)
+		// %
+
+		env, err := NewEnvironment(s, m.Message)
 		if err != nil {
-			log.Printf("Error resolving voice state context: %v", err)
+			log.Printf("Error resolving message context: %v", err)
 			return
 		}
-		if env.IsOwnEnvironment() {
+		if env.IsOwnEnvironment(*b) {
 			return
 		}
 
-		actions := env.Actions()
+		// %
+
+		actions := env.Actions(b.mongo.DB("aoebot"))
 		for _, a := range actions {
 			// shadow a in the goroutine
 			// as a iterates through for loop while goroutine would otherwise try to use it in closure asynchronously
 			go func(a Action) {
 				defer func() {
 					if err := recover(); err != nil {
-						log.Printf("Recovered from panic in perform %T on voice state update: %v", a, err)
+						log.Printf("Recovered from panic in perform %T on message create: %v", a, err)
 					}
 				}()
-				log.Printf("Perform %T on voice state update: %v", a, a)
-				err := a.perform(env)
+				log.Printf("Perform %T on message create: %v", a, a)
+				err := a.perform(b, env)
 				if err != nil {
-					log.Printf("Error in perform %T on voice state update: %v", a, err)
+					log.Printf("Error in perform %T on message create: %v", a, err)
 				}
 			}(a)
 		}
 	}
-	return
+}
+
+func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStateUpdate) {
+	// Create a context around a voice state when the bot sees someone's voice channel change
+	// Perform any actions that match that contex
+	// Access b Bot through a closure
+	return func(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
+		userID := v.VoiceState.UserID
+		channelID := v.VoiceState.ChannelID
+
+		if b.occupancy[userID] != channelID {
+			log.Printf("Saw user %v join the voice channel %v", userID, channelID)
+			// concurrent write vulnerability here
+			b.occupancy[userID] = channelID
+			if channelID == "" {
+				return
+			}
+
+			// %
+
+			env, err := NewEnvironment(s, v.VoiceState)
+			if err != nil {
+				log.Printf("Error resolving voice state context: %v", err)
+				return
+			}
+			if env.IsOwnEnvironment(*b) {
+				return
+			}
+
+			// %
+
+			actions := env.Actions(b.mongo.DB("aoebot"))
+			for _, a := range actions {
+				// shadow a in the goroutine
+				// as a iterates through for loop while goroutine would otherwise try to use it in closure asynchronously
+				go func(a Action) {
+					defer func() {
+						if err := recover(); err != nil {
+							log.Printf("Recovered from panic in perform %T on voice state update: %v", a, err)
+						}
+					}()
+					log.Printf("Perform %T on voice state update: %v", a, a)
+					err := a.perform(b, env)
+					if err != nil {
+						log.Printf("Error in perform %T on voice state update: %v", a, err)
+					}
+				}(a)
+			}
+		}
+	}
 }
 
 type botroutine struct {
@@ -284,61 +295,69 @@ type botroutine struct {
 }
 
 // hardcoded experiment for now
-func randomVoiceInOpenMic(quit <-chan struct{}) {
-	var err error
-	var wait time.Duration
-	log.Printf("Begin random voice routine")
-	defer log.Printf("End random voice routine")
-	for {
-		select {
-		case <-quit:
-			return
-		default:
-		}
-		wait = randomNormalWait(420, 90)
-		log.Printf("Next random voice in %f seconds", wait.Seconds())
-		select {
-		case <-quit:
-			return
-		case <-time.After(wait):
-			env := &Environment{}
-			env.Type = adhoc
-			env.VoiceChannel, err = me.session.State.Channel(openmicChannelID)
-			if err != nil {
-				log.Printf("Error resolve open mic channel %v", err)
-				continue
+func (b *Bot) randomVoiceInOpenMic() func(<-chan struct{}) {
+	// Access b Bot through a closure
+	return func(quit <-chan struct{}) {
+		var err error
+		var wait time.Duration
+
+		openmicChannelID := "322881248366428161"
+
+		log.Printf("Begin random voice routine.")
+		defer log.Printf("End random voice routine.")
+		for {
+			select {
+			case <-quit:
+				return
+			default:
 			}
-			env.Guild, err = me.session.State.Guild(env.VoiceChannel.GuildID)
-			if err != nil {
-				log.Printf("Error resolve open mic guild %v", err)
-				continue
-			}
-			if env.IsOwnEnvironment() {
-				continue
-			}
-			actions := env.Actions()
-			// randomly perform just one of the actions
-			a := actions[rand.Intn(len(actions))]
-			go func(a Action) {
-				defer func() {
-					if err := recover(); err != nil {
-						log.Printf("Recovered from panic in perform %T on random voice: %v", a, err)
-					}
-				}()
-				log.Printf("Perform %T on random voice: %v", a, a)
-				err := a.perform(env)
+			// TODO this doesn't work on 32-bit OS
+			wait = randomNormalWait(420, 90)
+			log.Printf("Next random voice in %f seconds", wait.Seconds())
+			select {
+			case <-quit:
+				return
+			case <-time.After(wait):
+
+				// %
+
+				env := &Environment{}
+				env.Type = adhoc
+				env.VoiceChannel, err = b.session.State.Channel(openmicChannelID)
 				if err != nil {
-					log.Printf("Error in perform %T on random voice: %v", a, err)
+					log.Printf("Error resolve open mic channel %v", err)
+					continue
 				}
-			}(a)
+				env.Guild, err = b.session.State.Guild(env.VoiceChannel.GuildID)
+				if err != nil {
+					log.Printf("Error resolve open mic guild %v", err)
+					continue
+				}
+				if env.IsOwnEnvironment(*b) {
+					continue
+				}
+
+				// %
+
+				actions := env.Actions(b.mongo.DB("aoebot"))
+				if len(actions) < 1 {
+					return
+				}
+				// randomly perform just one of the actions
+				a := actions[rand.Intn(len(actions))]
+				go func(a Action) {
+					defer func() {
+						if err := recover(); err != nil {
+							log.Printf("Recovered from panic in perform %T on random voice: %v", a, err)
+						}
+					}()
+					log.Printf("Perform %T on random voice: %v", a, a)
+					err := a.perform(b, env)
+					if err != nil {
+						log.Printf("Error in perform %T on random voice: %v", a, err)
+					}
+				}(a)
+			}
 		}
 	}
 }
-
-// func (g discordgo.Guild) String() string {
-// 	return fmt.Sprintf("%v %v", g.Name, g.ID)
-// }
-
-// func (c discordgo.Channel) String() string {
-// 	return fmt.Sprintf("%v %v", c.Name, c.ID)
-// }
