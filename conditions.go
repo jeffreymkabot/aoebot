@@ -7,21 +7,29 @@ import (
 
 // Condition defines a set of requirements an environment should meet for a particular action to be performed on that environment
 type Condition struct {
-	Name           string         `json:"name"`
-	ContextType    ContextType    `json:"type" bson:"type"`
-	Phrase         string         `json:"phrase,omitempty" bson:"phrase,omitempty"`
-	RegexPhrase    string         `json:"regex,omitempty" bson:"regex,omitempty"`
-	GuildID        string         `json:"guild,omitempty" bson:"guild,omitempty"`
-	TextChannelID  string         `json:"textChannel,omitempty" bson:"textChannel,omitempty"`
-	VoiceChannelID string         `json:"voiceChannel,omitempty" bson:"voiceChannel,omitempty"`
-	UserID         string         `json:"user,omitempty" bson:"user,omitempty"`
-	Action         ActionEnvelope `json:"action" bson:"action"`
+	Name            string          `json:"name"`
+	EnvironmentType EnvironmentType `json:"type" bson:"type"`
+	Phrase          string          `json:"phrase,omitempty" bson:"phrase,omitempty"`
+	RegexPhrase     string          `json:"regex,omitempty" bson:"regex,omitempty"`
+	GuildID         string          `json:"guild,omitempty" bson:"guild,omitempty"`
+	TextChannelID   string          `json:"textChannel,omitempty" bson:"textChannel,omitempty"`
+	VoiceChannelID  string          `json:"voiceChannel,omitempty" bson:"voiceChannel,omitempty"`
+	UserID          string          `json:"user,omitempty" bson:"user,omitempty"`
+	Action          ActionEnvelope  `json:"action" bson:"action"`
 }
 
 // ActionEnvelope encapsulates an Action and its ActionType
 type ActionEnvelope struct {
 	Type ActionType
 	Action
+}
+
+// NewActionEnvelope creates an around an Action
+func NewActionEnvelope(a Action) ActionEnvelope {
+	return ActionEnvelope{
+		Type:   a.kind(),
+		Action: a,
+	}
 }
 
 // ActionTypeMap is a one-to-one correspondence between an ActionType and a type implementing Action

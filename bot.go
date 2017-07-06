@@ -207,16 +207,16 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 	log.Printf("Saw a new message (%v) by user %v in channel %v", m.Message.Content, m.Message.Author, m.Message.ChannelID)
-	ctx, err := NewContext(m.Message)
+	env, err := NewEnvironment(m.Message)
 	if err != nil {
 		log.Printf("Error resolving message context: %v", err)
 		return
 	}
-	if ctx.IsOwnContext() {
+	if env.IsOwnEnvironment() {
 		return
 	}
 
-	actions := ctx.Actions()
+	actions := env.Actions()
 	for _, a := range actions {
 		// shadow a in the goroutine
 		// as a iterates through for loop while goroutine would otherwise try to use it in closure asynchronously
@@ -227,7 +227,7 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 				}
 			}()
 			log.Printf("Perform %T on message create: %v", a, a)
-			err := a.perform(ctx)
+			err := a.perform(env)
 			if err != nil {
 				log.Printf("Error in perform %T on message create: %v", a, err)
 			}
@@ -249,16 +249,16 @@ func onVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
 			return
 		}
 
-		ctx, err := NewContext(v.VoiceState)
+		env, err := NewEnvironment(v.VoiceState)
 		if err != nil {
 			log.Printf("Error resolving voice state context: %v", err)
 			return
 		}
-		if ctx.IsOwnContext() {
+		if env.IsOwnEnvironment() {
 			return
 		}
 
-		actions := ctx.Actions()
+		actions := env.Actions()
 		for _, a := range actions {
 			// shadow a in the goroutine
 			// as a iterates through for loop while goroutine would otherwise try to use it in closure asynchronously
@@ -269,7 +269,7 @@ func onVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
 					}
 				}()
 				log.Printf("Perform %T on voice state update: %v", a, a)
-				err := a.perform(ctx)
+				err := a.perform(env)
 				if err != nil {
 					log.Printf("Error in perform %T on voice state update: %v", a, err)
 				}
@@ -301,22 +301,22 @@ func randomVoiceInOpenMic(quit <-chan struct{}) {
 		case <-quit:
 			return
 		case <-time.After(wait):
-			ctx := &Context{}
-			ctx.Type = adhoc
-			ctx.VoiceChannel, err = me.session.State.Channel(openmicChannelID)
+			env := &Environment{}
+			env.Type = adhoc
+			env.VoiceChannel, err = me.session.State.Channel(openmicChannelID)
 			if err != nil {
 				log.Printf("Error resolve open mic channel %v", err)
 				continue
 			}
-			ctx.Guild, err = me.session.State.Guild(ctx.VoiceChannel.GuildID)
+			env.Guild, err = me.session.State.Guild(env.VoiceChannel.GuildID)
 			if err != nil {
 				log.Printf("Error resolve open mic guild %v", err)
 				continue
 			}
-			if ctx.IsOwnContext() {
+			if env.IsOwnEnvironment() {
 				continue
 			}
-			actions := ctx.Actions()
+			actions := env.Actions()
 			// randomly perform just one of the actions
 			a := actions[rand.Intn(len(actions))]
 			go func(a Action) {
@@ -326,7 +326,7 @@ func randomVoiceInOpenMic(quit <-chan struct{}) {
 					}
 				}()
 				log.Printf("Perform %T on random voice: %v", a, a)
-				err := a.perform(ctx)
+				err := a.perform(env)
 				if err != nil {
 					log.Printf("Error in perform %T on random voice: %v", a, err)
 				}

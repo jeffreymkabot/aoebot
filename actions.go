@@ -22,9 +22,9 @@ const (
 	quit      ActionType = "quit"
 )
 
-// Action can be performed given the context (environment) of its trigger
+// Action can be performed given the environment of its trigger
 type Action interface {
-	perform(ctx *Context) error
+	perform(env *Environment) error
 	kind() ActionType
 }
 
@@ -34,9 +34,9 @@ type WriteAction struct {
 	TTS     bool
 }
 
-// type something to the text channel of the original context
-func (wa WriteAction) perform(ctx *Context) (err error) {
-	err = me.Write(ctx.TextChannel.ID, wa.Content, wa.TTS)
+// type something to the text channel of the original environment
+func (wa WriteAction) perform(env *Environment) (err error) {
+	err = me.Write(env.TextChannel.ID, wa.Content, wa.TTS)
 	return
 }
 
@@ -56,8 +56,8 @@ type ReactAction struct {
 	Emoji string
 }
 
-func (ra ReactAction) perform(ctx *Context) (err error) {
-	err = me.React(ctx.TextChannel.ID, ctx.TextMessage.ID, ra.Emoji)
+func (ra ReactAction) perform(env *Environment) (err error) {
+	err = me.React(env.TextChannel.ID, env.TextMessage.ID, ra.Emoji)
 	return
 }
 
@@ -75,13 +75,13 @@ type SayAction struct {
 	buffer [][]byte
 }
 
-// say something to the voice channel of the user in the original context
-func (sa SayAction) perform(ctx *Context) (err error) {
+// say something to the voice channel of the user in the original environment
+func (sa SayAction) perform(env *Environment) (err error) {
 	vcID := ""
-	if ctx.VoiceChannel != nil {
-		vcID = ctx.VoiceChannel.ID
+	if env.VoiceChannel != nil {
+		vcID = env.VoiceChannel.ID
 	} else {
-		vcID = getVoiceChannelIDByContext(ctx)
+		vcID = getVoiceChannelIDByEnvironment(env)
 	}
 	if vcID == "" {
 		return
@@ -92,12 +92,12 @@ func (sa SayAction) perform(ctx *Context) (err error) {
 	if err != nil {
 		return
 	}
-	err = me.Say(ctx.Guild.ID, vcID, sa.buffer)
+	err = me.Say(env.Guild.ID, vcID, sa.buffer)
 	return
 }
 
-func getVoiceChannelIDByContext(ctx *Context) string {
-	return getVoiceChannelIDByUser(ctx.Guild, ctx.Author)
+func getVoiceChannelIDByEnvironment(env *Environment) string {
+	return getVoiceChannelIDByUser(env.Guild, env.Author)
 }
 
 func getVoiceChannelIDByUser(g *discordgo.Guild, u *discordgo.User) string {
@@ -161,8 +161,8 @@ func (sa SayAction) String() string {
 type StatsAction struct {
 }
 
-func (sa StatsAction) perform(ctx *Context) (err error) {
-	me.Write(ctx.TextChannel.ID, me.Stats().String(), false)
+func (sa StatsAction) perform(env *Environment) (err error) {
+	me.Write(env.TextChannel.ID, me.Stats().String(), false)
 	return
 }
 
@@ -175,11 +175,11 @@ type ReconnectVoiceAction struct {
 	Content string
 }
 
-func (rva ReconnectVoiceAction) perform(ctx *Context) (err error) {
+func (rva ReconnectVoiceAction) perform(env *Environment) (err error) {
 	if rva.Content != "" {
-		_ = me.Write(ctx.TextChannel.ID, rva.Content, false)
+		_ = me.Write(env.TextChannel.ID, rva.Content, false)
 	}
-	me.SpeakTo(ctx.Guild)
+	me.SpeakTo(env.Guild)
 	return
 }
 
@@ -196,9 +196,9 @@ type RestartAction struct {
 	Content string
 }
 
-func (ra RestartAction) perform(ctx *Context) (err error) {
+func (ra RestartAction) perform(env *Environment) (err error) {
 	if ra.Content != "" {
-		_ = me.Write(ctx.TextChannel.ID, ra.Content, false)
+		_ = me.Write(env.TextChannel.ID, ra.Content, false)
 	}
 	me.Sleep()
 	me.Wakeup()
@@ -219,9 +219,9 @@ type QuitAction struct {
 	Force   bool
 }
 
-func (qa QuitAction) perform(ctx *Context) (err error) {
+func (qa QuitAction) perform(env *Environment) (err error) {
 	if qa.Content != "" {
-		_ = me.Write(ctx.TextChannel.ID, qa.Content, false)
+		_ = me.Write(env.TextChannel.ID, qa.Content, false)
 	}
 	if qa.Force {
 		me.ForceDie()
@@ -240,4 +240,11 @@ func (qa QuitAction) String() string {
 		return fmt.Sprintf("force %v", qa.Content)
 	}
 	return fmt.Sprintf("%v", qa.Content)
+}
+
+type CreateActionAction struct {
+}
+
+func (caa CreateActionAction) perform(env *Environment) error {
+	return nil
 }
