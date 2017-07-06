@@ -14,6 +14,12 @@ import (
 	"time"
 )
 
+const (
+	// globals are only for convienience while experiment
+	// values will eventually be encoded with action conditions in a database
+	openmicChannelID = "322881248366428161"
+)
+
 // Bot represents a discord bot
 type Bot struct {
 	token      string
