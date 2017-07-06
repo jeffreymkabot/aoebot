@@ -10,6 +10,7 @@ import (
 	"strings"
 )
 
+// ContextType indicates the source of a context
 type ContextType int
 
 const (
@@ -21,12 +22,12 @@ const (
 // Context captures an environment that can elicit bot actions
 // TODO more generic to support capturing the Context of more events
 type Context struct {
+	Type         ContextType
 	Guild        *discordgo.Guild
 	TextChannel  *discordgo.Channel
 	TextMessage  *discordgo.Message
 	VoiceChannel *discordgo.Channel
 	Author       *discordgo.User
-	Type         ContextType
 }
 
 // NewContext creates a new environment based on a seed event/trigger
@@ -72,22 +73,12 @@ func (ctx Context) IsOwnContext() bool {
 	return ctx.Author != nil && ctx.Author.ID == me.self.ID
 }
 
-// Actions returns a list of actions matching a context
-// func (ctx Context) Actions() []Action {
-// 	actions := []Action{}
-// 	for _, c := range conditions {
-// 		if ctx.Satisfies(c) {
-// 			actions = append(actions, c.Action)
-// 		}
-// 	}
-// 	return actions
-// }
-
+// Actions retrieves the list of Actions whose Condition the context satisfies
 func (ctx Context) Actions() []Action {
 	actions := []Action{}
 	conditions := []Condition{}
 	coll := me.mongo.DB("aoebot").C("conditions")
-	query := ctx.Query()
+	query := ctx.query()
 	jsonQuery, _ := json.Marshal(query)
 	log.Printf("Using query %s", jsonQuery)
 	err := coll.Find(query).All(&conditions)
@@ -120,7 +111,7 @@ func emptyOrEqual(field string, value interface{}) bson.M {
 	}
 }
 
-func (ctx Context) Query() bson.M {
+func (ctx Context) query() bson.M {
 	and := []bson.M{}
 	if ctx.Guild != nil {
 		and = append(and, emptyOrEqual("guild", ctx.Guild.ID))

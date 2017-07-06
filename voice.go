@@ -18,7 +18,8 @@ const (
 
 // Voicebox
 // Creating a voicebox with newVoiceBox launches a goroutine that listens to payloads on the voicebox's queue channel
-// Bot should create
+// Since discord permits only one voice connection per guild,
+// Bot should create exactly one voicebox for each guild
 type voicebox struct {
 	queue chan<- *voicePayload
 	quit  chan<- struct{}

@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"gopkg.in/mgo.v2"
-	// _ "gopkg.in/mgo.v2/bson"
-	// "github.com/dustin/go-humanize"
 	"log"
 	"math/rand"
 	"os"
@@ -213,7 +211,7 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Message == nil {
 		return
 	}
-	log.Printf("Saw a new message (%v) by user %v in channel %v", m.Message.Content, m.Message.Author.Username, m.Message.ChannelID)
+	log.Printf("Saw a new message (%v) by user %v in channel %v", m.Message.Content, m.Message.Author, m.Message.ChannelID)
 	ctx, err := NewContext(m.Message)
 	if err != nil {
 		log.Printf("Error resolving message context: %v", err)

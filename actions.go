@@ -2,11 +2,9 @@ package main
 
 import (
 	"encoding/binary"
-	_ "encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	_ "github.com/fatih/structs"
-	// "gopkg.in/mgo.v2"
 	"io"
 	"os"
 )
@@ -177,7 +175,7 @@ func (ra RestartAction) String() string {
 	return fmt.Sprintf("%v", ra.Content)
 }
 
-// QuitAction indicates that the bot should terminate
+// QuitAction indicates that the bot should terminate execution
 type QuitAction struct {
 	Content string
 	Force   bool
