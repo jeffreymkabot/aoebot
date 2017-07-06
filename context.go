@@ -98,19 +98,6 @@ func (ctx Context) Actions() []Action {
 	return actions
 }
 
-func emptyOrEqual(field string, value interface{}) bson.M {
-	return bson.M{
-		"$or": []bson.M{
-			bson.M{
-				field: bson.M{"$exists": false},
-			},
-			bson.M{
-				field: value,
-			},
-		},
-	}
-}
-
 func (ctx Context) query() bson.M {
 	and := []bson.M{}
 	if ctx.Guild != nil {
@@ -142,6 +129,19 @@ func (ctx Context) query() bson.M {
 	return bson.M{
 		"type": ctx.Type,
 		"$and": and,
+	}
+}
+
+func emptyOrEqual(field string, value interface{}) bson.M {
+	return bson.M{
+		"$or": []bson.M{
+			bson.M{
+				field: bson.M{"$exists": false},
+			},
+			bson.M{
+				field: value,
+			},
+		},
 	}
 }
 

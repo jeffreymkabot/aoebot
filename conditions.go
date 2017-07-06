@@ -18,18 +18,11 @@ type Condition struct {
 	Action         ActionEnvelope `json:"action" bson:"action"`
 }
 
-// ActionType is used as a hint for unmarshalling actions from untyped languages e.g. JSON, BSON
-type ActionType string
-
-const (
-	write     ActionType = "write"
-	say       ActionType = "say"
-	react     ActionType = "react"
-	stats     ActionType = "stats"
-	reconnect ActionType = "reconnect"
-	restart   ActionType = "restart"
-	quit      ActionType = "quit"
-)
+// ActionEnvelope encapsulates an Action and its ActionType
+type ActionEnvelope struct {
+	Type ActionType
+	Action
+}
 
 // ActionTypeMap is a one-to-one correspondence between an ActionType and a type implementing Action
 // Calling a function retrieved from ActionTypeMap returns a pointer to a concrete instance of that Type
@@ -41,12 +34,6 @@ var ActionTypeMap = map[ActionType]func() Action{
 	reconnect: func() Action { return &ReconnectVoiceAction{} },
 	restart:   func() Action { return &RestartAction{} },
 	quit:      func() Action { return &QuitAction{} },
-}
-
-// ActionEnvelope encapsulates an Action and its ActionType
-type ActionEnvelope struct {
-	Type ActionType
-	Action
 }
 
 // SetBSON causes ActionEnvelope to implement the bson.Setter interface

@@ -9,9 +9,23 @@ import (
 	"os"
 )
 
+// ActionType is used as a hint for unmarshalling actions from untyped languages e.g. JSON, BSON
+type ActionType string
+
+const (
+	write     ActionType = "write"
+	say       ActionType = "say"
+	react     ActionType = "react"
+	stats     ActionType = "stats"
+	reconnect ActionType = "reconnect"
+	restart   ActionType = "restart"
+	quit      ActionType = "quit"
+)
+
 // Action can be performed given the context (environment) of its trigger
 type Action interface {
 	perform(ctx *Context) error
+	kind() ActionType
 }
 
 // WriteAction specifies content that can be written to a text channel
@@ -24,6 +38,10 @@ type WriteAction struct {
 func (wa WriteAction) perform(ctx *Context) (err error) {
 	err = me.Write(ctx.TextChannel.ID, wa.Content, wa.TTS)
 	return
+}
+
+func (wa WriteAction) kind() ActionType {
+	return write
 }
 
 func (wa WriteAction) String() string {
@@ -41,6 +59,10 @@ type ReactAction struct {
 func (ra ReactAction) perform(ctx *Context) (err error) {
 	err = me.React(ctx.TextChannel.ID, ctx.TextMessage.ID, ra.Emoji)
 	return
+}
+
+func (ra ReactAction) kind() ActionType {
+	return react
 }
 
 func (ra ReactAction) String() string {
@@ -127,6 +149,10 @@ func (sa *SayAction) load() error {
 	}
 }
 
+func (sa SayAction) kind() ActionType {
+	return say
+}
+
 func (sa SayAction) String() string {
 	return fmt.Sprintf("%v", sa.File)
 }
@@ -140,6 +166,10 @@ func (sa StatsAction) perform(ctx *Context) (err error) {
 	return
 }
 
+func (sa StatsAction) kind() ActionType {
+	return stats
+}
+
 // ReconnectVoiceAction indicates that the bot should refresh its voice worker for a guild
 type ReconnectVoiceAction struct {
 	Content string
@@ -151,6 +181,10 @@ func (rva ReconnectVoiceAction) perform(ctx *Context) (err error) {
 	}
 	me.SpeakTo(ctx.Guild)
 	return
+}
+
+func (rva ReconnectVoiceAction) kind() ActionType {
+	return reconnect
 }
 
 func (rva ReconnectVoiceAction) String() string {
@@ -169,6 +203,10 @@ func (ra RestartAction) perform(ctx *Context) (err error) {
 	me.Sleep()
 	me.Wakeup()
 	return
+}
+
+func (ra RestartAction) kind() ActionType {
+	return restart
 }
 
 func (ra RestartAction) String() string {
@@ -191,6 +229,10 @@ func (qa QuitAction) perform(ctx *Context) (err error) {
 		me.Die()
 	}
 	return
+}
+
+func (qa QuitAction) kind() ActionType {
+	return quit
 }
 
 func (qa QuitAction) String() string {
