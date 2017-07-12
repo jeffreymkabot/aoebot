@@ -30,14 +30,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error in wakeup: %v\n", err)
 	}
-	defer bot.Sleep()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill)
 
-	// select {
-	// case <-c:
-	// case <-bot.Kill():
-	// }
-	<-c
+	select {
+	case signal := <-c:
+		if signal != os.Kill {
+			bot.Sleep()
+		}
+	case <-bot.Killed():
+		// treat force quit like SIGKILL
+		if bot.Killer() != aoebot.ErrForceQuit {
+			bot.Sleep()
+		}
+	}
 }

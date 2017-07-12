@@ -1,28 +1,32 @@
 /*
-aoebot uses a discord bot with token t to connect to your server and recreate the aoe2 chat experience
+Package aoebot uses a discord bot to connect to your server and recreate the aoe2 chat experience
 Inspired by and modeled after github.com/hammerandchisel/airhornbot
 */
 package aoebot
 
 import (
+	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
-	// "gopkg.in/mgo.v2"
 	"log"
 	"math/rand"
 	"sync"
 	"time"
 )
 
+// ErrQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit
+var ErrQuit = errors.New("Dispatched a quit action")
+
+// ErrForceQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit immediately
+var ErrForceQuit = errors.New("Dispatched a force quit action")
+
 // Bot represents a discord bot
 type Bot struct {
-	mu sync.Mutex // TODO synchronize state and use of maps
-	// kill       chan struct{}
-	// err        error
-	token string
-	owner string
-	// dbURL      string
-	// mongo      *mgo.Session
+	mu         sync.Mutex // TODO synchronize state and use of maps
+	kill       chan struct{}
+	killer     error
+	token      string
+	owner      string
 	driver     *aoebotDriver
 	session    *discordgo.Session
 	self       *discordgo.User
@@ -36,10 +40,9 @@ type Bot struct {
 // New initializes a bot
 func New(token string, owner string, dbURL string) (b *Bot, err error) {
 	b = &Bot{
-		// kill:       make(chan struct{}),
-		token: token,
-		owner: owner,
-		// dbURL:      dbURL,
+		kill:       make(chan struct{}),
+		token:      token,
+		owner:      owner,
 		routines:   make(map[*botroutine]struct{}),
 		unhandlers: make(map[*func()]struct{}),
 		voiceboxes: make(map[string]*voicebox),
@@ -50,13 +53,38 @@ func New(token string, owner string, dbURL string) (b *Bot, err error) {
 	if err != nil {
 		return
 	}
-	b.session.LogLevel = discordgo.LogDebug
+	b.session.LogLevel = discordgo.LogInformational
 	return
 }
 
-// func (b *Bot) Kill() <-chan struct{} {
-// 	return b.kill
-// }
+// modeled after default package context
+func (b *Bot) die(err error) {
+	if err == nil {
+		panic("calls to Bot.die require an error")
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.killer != nil {
+		return
+	}
+	b.killer = err
+	close(b.kill)
+}
+
+// Killed returns a channel that is closed when the bot recieves an internal signal to terminate.
+// Clients using the bot *should* respect the signal and stop trying to use it
+// modeled after default package context
+func (b *Bot) Killed() <-chan struct{} {
+	return b.kill
+}
+
+// Killer returns an error message that is non-nil once the bot receives an internal signal to terminate
+// modeled after default package context
+func (b *Bot) Killer() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.killer
+}
 
 // Wakeup initiates a new database session and discord session
 func (b *Bot) Wakeup() (err error) {
@@ -120,27 +148,6 @@ func (b *Bot) Sleep() {
 	log.Printf("...closed session.")
 }
 
-// Add an event handler to the discord session and retain a reference to the handler remover
-func (b *Bot) addHandler(handler interface{}) {
-	unhandler := b.session.AddHandler(handler)
-	b.unhandlers[&unhandler] = struct{}{}
-}
-
-// Add a one-time event handler to the discord session and retain a reference to the handler remover
-func (b *Bot) addHandlerOnce(handler interface{}) {
-	unhandler := b.session.AddHandlerOnce(handler)
-	b.unhandlers[&unhandler] = struct{}{}
-}
-
-func (b *Bot) addRoutine(f func(<-chan struct{})) {
-	quit := make(chan struct{})
-	go f(quit)
-	r := &botroutine{
-		quit: quit,
-	}
-	b.routines[r] = struct{}{}
-}
-
 // Write a message to a channel in a guild
 func (b *Bot) Write(channelID string, message string, tts bool) (err error) {
 	if tts {
@@ -183,13 +190,35 @@ func (b *Bot) sayToUserInGuild(guild *discordgo.Guild, userID string, audio [][]
 			return b.Say(guild.ID, vs.ChannelID, audio)
 		}
 	}
-	return fmt.Errorf("Couldn't find user %v in a voice channel in guild %v", userID, guild.ID)
+	err = fmt.Errorf("Couldn't find user %v in a voice channel in guild %v", userID, guild.ID)
+	return
 }
 
 // Listen to some audio frames in a guild
 // TODO
 func (b *Bot) Listen(guildID string, channelID string, duration time.Duration) (err error) {
 	return
+}
+
+// Add an event handler to the discord session and retain a reference to the handler remover
+func (b *Bot) addHandler(handler interface{}) {
+	unhandler := b.session.AddHandler(handler)
+	b.unhandlers[&unhandler] = struct{}{}
+}
+
+// Add a one-time event handler to the discord session and retain a reference to the handler remover
+func (b *Bot) addHandlerOnce(handler interface{}) {
+	unhandler := b.session.AddHandlerOnce(handler)
+	b.unhandlers[&unhandler] = struct{}{}
+}
+
+func (b *Bot) addRoutine(f func(<-chan struct{})) {
+	quit := make(chan struct{})
+	go f(quit)
+	r := &botroutine{
+		quit: quit,
+	}
+	b.routines[r] = struct{}{}
 }
 
 // IsOwnEnvironment is true when an environment references the bot's own actions/behavior
@@ -199,39 +228,53 @@ func (b *Bot) IsOwnEnvironment(env *Environment) bool {
 }
 
 func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
+	// Function signature needs to be exact to be detected as the Ready handler by discordgo
 	// Access b Bot through a closure
 	return func(s *discordgo.Session, r *discordgo.Ready) {
-		log.Printf("Ready: %#v\n", r)
+		log.Printf("Got discord ready: %#v\n", r)
 		for _, g := range r.Guilds {
-			// exec independently per each guild g
-			b.SpeakTo(g)
-			for _, vs := range g.VoiceStates {
-				b.occupancy[vs.UserID] = vs.ChannelID
-			}
+			b.registerGuild(g)
 		}
+		b.addHandler(b.onGuildCreate())
 		b.addHandler(b.onMessageCreate())
 		b.addHandler(b.onVoiceStateUpdate())
-		b.addRoutine(b.randomVoiceInOpenMic())
+		// b.addRoutine(b.randomVoiceInOpenMic())
+	}
+}
+
+func (b *Bot) registerGuild(g *discordgo.Guild) {
+	b.speakTo(g)
+	for _, vs := range g.VoiceStates {
+		// TODO bots could be in a channel in multiple guilds
+		b.occupancy[vs.UserID] = vs.ChannelID
+	}
+}
+
+func (b *Bot) onGuildCreate() func(*discordgo.Session, *discordgo.GuildCreate) {
+	return func(s *discordgo.Session, g *discordgo.GuildCreate) {
+		if g.Guild == nil {
+			return
+		}
+		b.registerGuild(g.Guild)
 	}
 }
 
 func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreate) {
 	// Create a context around a voice state when the bot sees a new text message
 	// Perform any actions that match that contex
+	// Function signature needs to be exact to be detected as the right event handler by discordgo
 	// Access b Bot through a closure
 	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m.Message == nil {
 			return
 		}
-		log.Printf("Saw a new message (%v) by %s in channel %v", m.Message.Content, m.Message.Author, m.Message.ChannelID)
-
-		// %
 
 		env, err := NewEnvironment(s, m.Message)
 		if err != nil {
-			log.Printf("Error resolving message context: %v", err)
+			log.Printf("Error resolving environment of new message: %v", err)
 			return
 		}
+		log.Printf("Saw a new message (%v) by %s in channel %v in guild %v", env.TextMessage.Content, env.Author, env.TextChannel.Name, env.Guild.Name)
 		if b.IsOwnEnvironment(env) {
 			return
 		}
@@ -246,6 +289,7 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStateUpdate) {
 	// Create a context around a voice state when the bot sees someone's voice channel change
 	// Perform any actions that match that contex
+	// Function signature needs to be exact to be detected as the right event handler by discordgo
 	// Access b Bot through a closure
 	return func(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
 		userID := v.VoiceState.UserID
@@ -253,19 +297,17 @@ func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStat
 
 		occupancy := b.occupancy[userID]
 		if occupancy != channelID {
-			log.Printf("Saw user %v join the voice channel %v", userID, channelID)
 			b.occupancy[userID] = channelID
 			if channelID == "" {
 				return
 			}
-
-			// %
 
 			env, err := NewEnvironment(s, v.VoiceState)
 			if err != nil {
 				log.Printf("Error resolving voice state context: %v", err)
 				return
 			}
+			log.Printf("Saw user %s join the voice channel %v in guild %v", env.Author, env.VoiceChannel.Name, env.Guild.Name)
 			if b.IsOwnEnvironment(env) {
 				return
 			}
@@ -350,7 +392,7 @@ func (b *Bot) dispatch(env *Environment, actions ...Action) {
 				}
 			}()
 			log.Printf("Perform %T on %v: %v", a, env.Type, a)
-			err := a.performFunc(env)(b)
+			err := (a.performFunc(env))(b)
 			if err != nil {
 				log.Printf("Error in perform %T on %v: %v", a, env.Type, err)
 			}

@@ -31,8 +31,8 @@ type voicePayload struct {
 	channelID string
 }
 
-// SpeakTo opens the conversation with a discord guild
-func (b *Bot) SpeakTo(g *discordgo.Guild) {
+// speakTo opens the conversation with a discord guild
+func (b *Bot) speakTo(g *discordgo.Guild) {
 	vb, ok := b.voiceboxes[g.ID]
 	if ok && vb.quit != nil {
 		close(vb.quit)
@@ -91,6 +91,8 @@ func payloadSender(s *discordgo.Session, g *discordgo.Guild, queue <-chan *voice
 	}
 
 	defer disconnect()
+
+	vc, _ = s.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
 
 PayloadLoop:
 	for {

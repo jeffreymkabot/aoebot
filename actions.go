@@ -153,7 +153,7 @@ func (rva ReconnectVoiceAction) performFunc(env *Environment) func(*Bot) error {
 		if rva.Content != "" {
 			_ = b.Write(env.TextChannel.ID, rva.Content, false)
 		}
-		b.SpeakTo(env.Guild)
+		b.speakTo(env.Guild)
 		return nil
 	}
 }
@@ -201,10 +201,10 @@ func (qa QuitAction) performFunc(env *Environment) func(*Bot) error {
 			_ = b.Write(env.TextChannel.ID, qa.Content, false)
 		}
 		if !qa.Force {
-			b.Sleep()
+			b.die(ErrQuit)
+		} else {
+			b.die(ErrForceQuit)
 		}
-		// TODO
-		// close(b.kill)
 		return nil
 	}
 }
