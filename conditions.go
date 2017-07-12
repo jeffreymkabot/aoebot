@@ -1,4 +1,4 @@
-package main
+package aoebot
 
 import (
 	"fmt"
@@ -25,6 +25,7 @@ type ActionEnvelope struct {
 }
 
 // NewActionEnvelope creates an around an Action
+// TODO refactor Action.Envelope()
 func NewActionEnvelope(a Action) ActionEnvelope {
 	return ActionEnvelope{
 		Type:   a.kind(),
@@ -44,7 +45,7 @@ var ActionTypeMap = map[ActionType]func() Action{
 	quit:      func() Action { return &QuitAction{} },
 }
 
-// SetBSON causes ActionEnvelope to implement the bson.Setter interface
+// SetBSON lets ActionEnvelope implement the bson.Setter interface
 // ActionEnvelope needs to have its be partially unmarshalled into an intermediate struct
 // in order to deterimine which concrete type its Action field can be unmarshalled into
 func (ae *ActionEnvelope) SetBSON(raw bson.Raw) error {

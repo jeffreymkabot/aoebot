@@ -1,4 +1,4 @@
-package main
+package aoebot
 
 import (
 	"github.com/bwmarrin/discordgo"

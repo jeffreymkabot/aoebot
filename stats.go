@@ -1,4 +1,4 @@
-package main
+package aoebot
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ type Stats struct {
 }
 
 // Stats gets up-to-date runtime information about the bot
-func (b Bot) Stats() *Stats {
+func (b *Bot) Stats() *Stats {
 	s := &Stats{}
 	s.host, _ = os.Hostname()
 	s.os = runtime.GOOS

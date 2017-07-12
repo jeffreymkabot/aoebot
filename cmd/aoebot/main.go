@@ -6,6 +6,7 @@ package main
 
 import (
 	"flag"
+	"github.com/jeffreymkabot/aoebot"
 	"log"
 	"os"
 	"os/signal"
@@ -22,16 +23,21 @@ func main() {
 	}
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+	log.Printf("Hello World~")
+	bot, err := aoebot.New(*token, *owner, *dbURL)
 
-	me := NewBot(*token, *owner, *dbURL)
-
-	err := me.Wakeup()
+	err = bot.Wakeup()
 	if err != nil {
-		log.Fatalf("Error in wakeup: %#v\n", err)
+		log.Fatalf("Error in wakeup: %v\n", err)
 	}
-	defer me.Die()
+	defer bot.Sleep()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill)
-	<-c // wait on ctrl-C to prop open main thread
+
+	// select {
+	// case <-c:
+	// case <-bot.Kill():
+	// }
+	<-c
 }

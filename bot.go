@@ -2,55 +2,68 @@
 aoebot uses a discord bot with token t to connect to your server and recreate the aoe2 chat experience
 Inspired by and modeled after github.com/hammerandchisel/airhornbot
 */
-package main
+package aoebot
 
 import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
-	"gopkg.in/mgo.v2"
+	// "gopkg.in/mgo.v2"
 	"log"
 	"math/rand"
-	"os"
+	"sync"
 	"time"
 )
 
 // Bot represents a discord bot
 type Bot struct {
-	token      string
-	owner      string
-	dbURL      string
-	mongo      *mgo.Session
+	mu sync.Mutex // TODO synchronize state and use of maps
+	// kill       chan struct{}
+	// err        error
+	token string
+	owner string
+	// dbURL      string
+	// mongo      *mgo.Session
+	driver     *aoebotDriver
 	session    *discordgo.Session
 	self       *discordgo.User
-	routines   []*botroutine
-	unhandlers []func()
+	routines   map[*botroutine]struct{}
+	unhandlers map[*func()]struct{}
 	voiceboxes map[string]*voicebox // TODO voiceboxes is vulnerable to concurrent read/write
 	occupancy  map[string]string    // TODO occupancy is vulnerable to concurrent read/write
 	aesthetic  bool
 }
 
-// NewBot initializes a bot
-func NewBot(token string, owner string, dbURL string) *Bot {
-	b := &Bot{
-		token:      token,
-		owner:      owner,
-		dbURL:      dbURL,
-		routines:   []*botroutine{},
-		unhandlers: []func(){},
+// New initializes a bot
+func New(token string, owner string, dbURL string) (b *Bot, err error) {
+	b = &Bot{
+		// kill:       make(chan struct{}),
+		token: token,
+		owner: owner,
+		// dbURL:      dbURL,
+		routines:   make(map[*botroutine]struct{}),
+		unhandlers: make(map[*func()]struct{}),
 		voiceboxes: make(map[string]*voicebox),
 		occupancy:  make(map[string]string),
 	}
-	return b
-}
-
-// Wakeup initiates a new db session and discord session
-func (b *Bot) Wakeup() (err error) {
-	b.mongo, err = mgo.Dial(b.dbURL)
+	b.driver = newAoebotDriver(dbURL)
+	b.session, err = discordgo.New("Bot " + b.token)
 	if err != nil {
 		return
 	}
+	b.session.LogLevel = discordgo.LogDebug
+	return
+}
 
-	b.session, err = discordgo.New("Bot " + b.token)
+// func (b *Bot) Kill() <-chan struct{} {
+// 	return b.kill
+// }
+
+// Wakeup initiates a new database session and discord session
+func (b *Bot) Wakeup() (err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	err = b.driver.wakeup()
 	if err != nil {
 		return
 	}
@@ -64,28 +77,32 @@ func (b *Bot) Wakeup() (err error) {
 	// begin listen to discord websocket for events
 	// invoking session.Open() triggers the discord ready event
 	err = b.session.Open()
-
+	if err != nil {
+		return
+	}
 	return
 }
 
 // Sleep removes event handlers, stops all workers, closes the discord session, and closes the db session.
 func (b *Bot) Sleep() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	log.Printf("Closing session...")
 
-	for _, f := range b.unhandlers {
+	for f := range b.unhandlers {
 		if f != nil {
-			f()
+			(*f)()
 		}
+		delete(b.unhandlers, f)
 	}
-	b.unhandlers = b.unhandlers[len(b.unhandlers):]
 
-	for _, r := range b.routines {
+	for r := range b.routines {
 		if r.quit != nil {
 			close(r.quit)
 			r.quit = nil
 		}
+		delete(b.routines, r)
 	}
-	b.routines = b.routines[len(b.routines):]
 
 	for k, vb := range b.voiceboxes {
 		if vb.quit != nil {
@@ -95,39 +112,24 @@ func (b *Bot) Sleep() {
 		delete(b.voiceboxes, k)
 	}
 
-	// close the session after closing voice boxes since closing voiceboxes attempts disconnect
+	// close the session after closing voice boxes since closing voiceboxes attempts graceful disconnect using discord session
 	b.session.Close()
-	b.session = nil
 
-	b.mongo.Close()
-	b.mongo = nil
+	b.driver.sleep()
 
 	log.Printf("...closed session.")
-}
-
-// Die kills the bot gracefully
-func (b *Bot) Die() {
-	b.Sleep()
-	log.Printf("Quit.")
-	os.Exit(0)
-}
-
-// ForceDie kills the bot with a vengeance
-func (b *Bot) ForceDie() {
-	log.Printf("Force Quit.")
-	os.Exit(1)
 }
 
 // Add an event handler to the discord session and retain a reference to the handler remover
 func (b *Bot) addHandler(handler interface{}) {
 	unhandler := b.session.AddHandler(handler)
-	b.unhandlers = append(b.unhandlers, unhandler)
+	b.unhandlers[&unhandler] = struct{}{}
 }
 
 // Add a one-time event handler to the discord session and retain a reference to the handler remover
 func (b *Bot) addHandlerOnce(handler interface{}) {
 	unhandler := b.session.AddHandlerOnce(handler)
-	b.unhandlers = append(b.unhandlers, unhandler)
+	b.unhandlers[&unhandler] = struct{}{}
 }
 
 func (b *Bot) addRoutine(f func(<-chan struct{})) {
@@ -136,7 +138,7 @@ func (b *Bot) addRoutine(f func(<-chan struct{})) {
 	r := &botroutine{
 		quit: quit,
 	}
-	b.routines = append(b.routines, r)
+	b.routines[r] = struct{}{}
 }
 
 // Write a message to a channel in a guild
@@ -174,10 +176,26 @@ func (b *Bot) Say(guildID string, channelID string, audio [][]byte) (err error) 
 	return
 }
 
+// helper func
+func (b *Bot) sayToUserInGuild(guild *discordgo.Guild, userID string, audio [][]byte) (err error) {
+	for _, vs := range guild.VoiceStates {
+		if vs.UserID == userID {
+			return b.Say(guild.ID, vs.ChannelID, audio)
+		}
+	}
+	return fmt.Errorf("Couldn't find user %v in a voice channel in guild %v", userID, guild.ID)
+}
+
 // Listen to some audio frames in a guild
 // TODO
 func (b *Bot) Listen(guildID string, channelID string, duration time.Duration) (err error) {
 	return
+}
+
+// IsOwnEnvironment is true when an environment references the bot's own actions/behavior
+// This is useful to prevent the bot from reacting to itself
+func (b *Bot) IsOwnEnvironment(env *Environment) bool {
+	return env.Author != nil && env.Author.ID == b.self.ID
 }
 
 func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
@@ -205,7 +223,7 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 		if m.Message == nil {
 			return
 		}
-		log.Printf("Saw a new message (%v) by user %v in channel %v", m.Message.Content, m.Message.Author, m.Message.ChannelID)
+		log.Printf("Saw a new message (%v) by %s in channel %v", m.Message.Content, m.Message.Author, m.Message.ChannelID)
 
 		// %
 
@@ -214,29 +232,14 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 			log.Printf("Error resolving message context: %v", err)
 			return
 		}
-		if env.IsOwnEnvironment(*b) {
+		if b.IsOwnEnvironment(env) {
 			return
 		}
 
 		// %
 
-		actions := env.Actions(b.mongo.DB("aoebot"))
-		for _, a := range actions {
-			// shadow a in the goroutine
-			// as a iterates through for loop while goroutine would otherwise try to use it in closure asynchronously
-			go func(a Action) {
-				defer func() {
-					if err := recover(); err != nil {
-						log.Printf("Recovered from panic in perform %T on message create: %v", a, err)
-					}
-				}()
-				log.Printf("Perform %T on message create: %v", a, a)
-				err := a.perform(b, env)
-				if err != nil {
-					log.Printf("Error in perform %T on message create: %v", a, err)
-				}
-			}(a)
-		}
+		actions := b.driver.Actions(env)
+		b.dispatch(env, actions...)
 	}
 }
 
@@ -248,9 +251,9 @@ func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStat
 		userID := v.VoiceState.UserID
 		channelID := v.VoiceState.ChannelID
 
-		if b.occupancy[userID] != channelID {
+		occupancy := b.occupancy[userID]
+		if occupancy != channelID {
 			log.Printf("Saw user %v join the voice channel %v", userID, channelID)
-			// concurrent write vulnerability here
 			b.occupancy[userID] = channelID
 			if channelID == "" {
 				return
@@ -263,29 +266,14 @@ func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStat
 				log.Printf("Error resolving voice state context: %v", err)
 				return
 			}
-			if env.IsOwnEnvironment(*b) {
+			if b.IsOwnEnvironment(env) {
 				return
 			}
 
 			// %
 
-			actions := env.Actions(b.mongo.DB("aoebot"))
-			for _, a := range actions {
-				// shadow a in the goroutine
-				// as a iterates through for loop while goroutine would otherwise try to use it in closure asynchronously
-				go func(a Action) {
-					defer func() {
-						if err := recover(); err != nil {
-							log.Printf("Recovered from panic in perform %T on voice state update: %v", a, err)
-						}
-					}()
-					log.Printf("Perform %T on voice state update: %v", a, a)
-					err := a.perform(b, env)
-					if err != nil {
-						log.Printf("Error in perform %T on voice state update: %v", a, err)
-					}
-				}(a)
-			}
+			actions := b.driver.Actions(env)
+			b.dispatch(env, actions...)
 		}
 	}
 }
@@ -333,31 +321,39 @@ func (b *Bot) randomVoiceInOpenMic() func(<-chan struct{}) {
 					log.Printf("Error resolve open mic guild %v", err)
 					continue
 				}
-				if env.IsOwnEnvironment(*b) {
+				if b.IsOwnEnvironment(env) {
 					continue
 				}
 
 				// %
 
-				actions := env.Actions(b.mongo.DB("aoebot"))
+				actions := b.driver.Actions(env)
 				if len(actions) < 1 {
-					return
+					continue
 				}
 				// randomly perform just one of the actions
 				a := actions[rand.Intn(len(actions))]
-				go func(a Action) {
-					defer func() {
-						if err := recover(); err != nil {
-							log.Printf("Recovered from panic in perform %T on random voice: %v", a, err)
-						}
-					}()
-					log.Printf("Perform %T on random voice: %v", a, a)
-					err := a.perform(b, env)
-					if err != nil {
-						log.Printf("Error in perform %T on random voice: %v", a, err)
-					}
-				}(a)
+				b.dispatch(env, a)
 			}
 		}
+	}
+}
+
+func (b *Bot) dispatch(env *Environment, actions ...Action) {
+	for _, a := range actions {
+		// shadow a in the goroutine
+		// a iterates through for loop goroutine would otherwise try to use it in closure asynchronously
+		go func(a Action) {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Printf("Recovered from panic in perform %T on %v: %v", a, env.Type, err)
+				}
+			}()
+			log.Printf("Perform %T on %v: %v", a, env.Type, a)
+			err := a.performFunc(env)(b)
+			if err != nil {
+				log.Printf("Error in perform %T on %v: %v", a, env.Type, err)
+			}
+		}(a)
 	}
 }

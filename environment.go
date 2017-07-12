@@ -1,12 +1,8 @@
-package main
+package aoebot
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
-	"log"
 	"regexp"
 	"strings"
 )
@@ -66,84 +62,6 @@ func NewEnvironment(session *discordgo.Session, seed interface{}) (env *Environm
 		return
 	}
 	return
-}
-
-// IsOwnEnvironment is true when an environment references the bot's own actions/behavior
-// This is useful to prevent the bot from reacting to itself
-func (env Environment) IsOwnEnvironment(b Bot) bool {
-	return env.Author != nil && env.Author.ID == b.self.ID
-}
-
-// Actions retrieves the list of Actions whose conditions the environment satisfies
-func (env Environment) Actions(db *mgo.Database) []Action {
-	actions := []Action{}
-	conditions := []Condition{}
-	coll := db.C("conditions")
-	query := env.query()
-	jsonQuery, _ := json.Marshal(query)
-	log.Printf("Using query %s", jsonQuery)
-	err := coll.Find(query).All(&conditions)
-	if err != nil {
-		log.Printf("Error in query %v", err)
-	}
-	for _, c := range conditions {
-		if c.RegexPhrase != "" && env.TextMessage != nil {
-			if regexp.MustCompile(c.RegexPhrase).MatchString(strings.ToLower(env.TextMessage.Content)) {
-				actions = append(actions, c.Action.Action)
-			}
-		} else {
-			actions = append(actions, c.Action.Action)
-		}
-	}
-	log.Printf("Found actions %v", actions)
-	return actions
-}
-
-func (env Environment) query() bson.M {
-	and := []bson.M{}
-	if env.Guild != nil {
-		and = append(and, emptyOrEqual("guild", env.Guild.ID))
-	}
-	if env.Author != nil {
-		and = append(and, emptyOrEqual("user", env.Author.ID))
-	}
-	if env.TextChannel != nil {
-		and = append(and, emptyOrEqual("textChannel", env.TextChannel.ID))
-	}
-	if env.VoiceChannel != nil {
-		and = append(and, emptyOrEqual("textChannel", env.VoiceChannel.ID))
-	}
-	phrase := ""
-	if env.TextMessage != nil {
-		phrase = strings.ToLower(env.TextMessage.Content)
-	}
-	and = append(and, emptyOrEqual("phrase", phrase))
-	// regex := bson.M{
-	// 	"$or": []bson.M{
-	// 		bson.M{
-	// 			"regex": bson.M{"$exists": false},
-	// 		},
-	// 		bson.M{},
-	// 	},
-	// }
-	// and = append(and, regex)
-	return bson.M{
-		"type": env.Type,
-		"$and": and,
-	}
-}
-
-func emptyOrEqual(field string, value interface{}) bson.M {
-	return bson.M{
-		"$or": []bson.M{
-			bson.M{
-				field: bson.M{"$exists": false},
-			},
-			bson.M{
-				field: value,
-			},
-		},
-	}
 }
 
 // Satisfies is true when an environment meets the requirements defined in a Condition

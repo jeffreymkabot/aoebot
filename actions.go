@@ -1,18 +1,25 @@
-package main
+package aoebot
 
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/bwmarrin/discordgo"
-	_ "github.com/fatih/structs"
+	// "github.com/bwmarrin/discordgo"
+	// "github.com/fatih/structs"
 	"io"
 	"os"
 )
+
+// Action can be performed given the environment of its trigger
+type Action interface {
+	performFunc(*Environment) func(*Bot) error
+	kind() ActionType
+}
 
 // ActionType is used as a hint for unmarshalling actions from untyped languages e.g. JSON, BSON
 type ActionType string
 
 const (
+	null      ActionType = "null"
 	write     ActionType = "write"
 	say       ActionType = "say"
 	react     ActionType = "react"
@@ -22,22 +29,16 @@ const (
 	quit      ActionType = "quit"
 )
 
-// Action can be performed given the environment of its trigger
-type Action interface {
-	perform(b *Bot, env *Environment) error
-	kind() ActionType
-}
-
 // WriteAction specifies content that can be written to a text channel
 type WriteAction struct {
 	Content string
 	TTS     bool
 }
 
-// type something to the text channel of the original environment
-func (wa WriteAction) perform(b *Bot, env *Environment) (err error) {
-	err = b.Write(env.TextChannel.ID, wa.Content, wa.TTS)
-	return
+func (wa WriteAction) performFunc(env *Environment) func(*Bot) error {
+	return func(b *Bot) error {
+		return b.Write(env.TextChannel.ID, wa.Content, wa.TTS)
+	}
 }
 
 func (wa WriteAction) kind() ActionType {
@@ -56,9 +57,10 @@ type ReactAction struct {
 	Emoji string
 }
 
-func (ra ReactAction) perform(b *Bot, env *Environment) (err error) {
-	err = b.React(env.TextChannel.ID, env.TextMessage.ID, ra.Emoji)
-	return
+func (ra ReactAction) performFunc(env *Environment) func(*Bot) error {
+	return func(b *Bot) error {
+		return b.React(env.TextChannel.ID, env.TextMessage.ID, ra.Emoji)
+	}
 }
 
 func (ra ReactAction) kind() ActionType {
@@ -75,55 +77,25 @@ type SayAction struct {
 	buffer [][]byte
 }
 
-// say something to the voice channel of the user in the original environment
-func (sa SayAction) perform(b *Bot, env *Environment) (err error) {
-	vcID := ""
-	if env.VoiceChannel != nil {
-		vcID = env.VoiceChannel.ID
-	} else {
-		vcID = getVoiceChannelIDByEnvironment(env)
-	}
-	if vcID == "" {
-		return
-	}
-
-	// TODO cache file contents from load
-	err = sa.load()
-	if err != nil {
-		return
-	}
-	err = b.Say(env.Guild.ID, vcID, sa.buffer)
-	return
-}
-
-func getVoiceChannelIDByEnvironment(env *Environment) string {
-	return getVoiceChannelIDByUser(env.Guild, env.Author)
-}
-
-func getVoiceChannelIDByUser(g *discordgo.Guild, u *discordgo.User) string {
-	for _, vs := range g.VoiceStates {
-		if vs.UserID == u.ID {
-			return vs.ChannelID
+func (sa SayAction) performFunc(env *Environment) func(*Bot) error {
+	return func(b *Bot) error {
+		// TODO cache result of sa.load
+		buf, err := sa.load()
+		if err != nil {
+			return err
 		}
-	}
-	return ""
-}
-
-func getVoiceChannelIDByUserID(g *discordgo.Guild, uID string) string {
-	for _, vs := range g.VoiceStates {
-		if vs.UserID == uID {
-			return vs.ChannelID
+		if env.VoiceChannel != nil {
+			return b.Say(env.Guild.ID, env.VoiceChannel.ID, buf)
 		}
+		return b.sayToUserInGuild(env.Guild, env.Author.ID, buf)
 	}
-	return ""
 }
 
-// need to use pointer receiver so the load method can modify the voiceAction's internal byte buffer
-func (sa *SayAction) load() error {
-	sa.buffer = make([][]byte, 0)
+func (sa SayAction) load() (buf [][]byte, err error) {
+	buf = make([][]byte, 0)
 	file, err := os.Open(sa.File)
 	if err != nil {
-		return err
+		return
 	}
 	defer file.Close()
 
@@ -132,20 +104,20 @@ func (sa *SayAction) load() error {
 	for {
 		err = binary.Read(file, binary.LittleEndian, &opuslen)
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			return nil
+			return buf, nil
 		}
 		if err != nil {
-			return err
+			return
 		}
 
 		inbuf := make([]byte, opuslen)
 		err = binary.Read(file, binary.LittleEndian, &inbuf)
 
 		if err != nil {
-			return err
+			return
 		}
 
-		sa.buffer = append(sa.buffer, inbuf)
+		buf = append(buf, inbuf)
 	}
 }
 
@@ -161,9 +133,10 @@ func (sa SayAction) String() string {
 type StatsAction struct {
 }
 
-func (sa StatsAction) perform(b *Bot, env *Environment) (err error) {
-	b.Write(env.TextChannel.ID, b.Stats().String(), false)
-	return
+func (sa StatsAction) performFunc(env *Environment) func(*Bot) error {
+	return func(b *Bot) error {
+		return b.Write(env.TextChannel.ID, b.Stats().String(), false)
+	}
 }
 
 func (sa StatsAction) kind() ActionType {
@@ -175,12 +148,14 @@ type ReconnectVoiceAction struct {
 	Content string
 }
 
-func (rva ReconnectVoiceAction) perform(b *Bot, env *Environment) (err error) {
-	if rva.Content != "" {
-		_ = b.Write(env.TextChannel.ID, rva.Content, false)
+func (rva ReconnectVoiceAction) performFunc(env *Environment) func(*Bot) error {
+	return func(b *Bot) error {
+		if rva.Content != "" {
+			_ = b.Write(env.TextChannel.ID, rva.Content, false)
+		}
+		b.SpeakTo(env.Guild)
+		return nil
 	}
-	b.SpeakTo(env.Guild)
-	return
 }
 
 func (rva ReconnectVoiceAction) kind() ActionType {
@@ -196,13 +171,14 @@ type RestartAction struct {
 	Content string
 }
 
-func (ra RestartAction) perform(b *Bot, env *Environment) (err error) {
-	if ra.Content != "" {
-		_ = b.Write(env.TextChannel.ID, ra.Content, false)
+func (ra RestartAction) performFunc(env *Environment) func(*Bot) error {
+	return func(b *Bot) error {
+		if ra.Content != "" {
+			_ = b.Write(env.TextChannel.ID, ra.Content, false)
+		}
+		b.Sleep()
+		return b.Wakeup()
 	}
-	b.Sleep()
-	b.Wakeup()
-	return
 }
 
 func (ra RestartAction) kind() ActionType {
@@ -219,16 +195,18 @@ type QuitAction struct {
 	Force   bool
 }
 
-func (qa QuitAction) perform(b *Bot, env *Environment) (err error) {
-	if qa.Content != "" {
-		_ = b.Write(env.TextChannel.ID, qa.Content, false)
+func (qa QuitAction) performFunc(env *Environment) func(*Bot) error {
+	return func(b *Bot) error {
+		if qa.Content != "" {
+			_ = b.Write(env.TextChannel.ID, qa.Content, false)
+		}
+		if !qa.Force {
+			b.Sleep()
+		}
+		// TODO
+		// close(b.kill)
+		return nil
 	}
-	if qa.Force {
-		b.ForceDie()
-	} else {
-		b.Die()
-	}
-	return
 }
 
 func (qa QuitAction) kind() ActionType {
@@ -242,9 +220,9 @@ func (qa QuitAction) String() string {
 	return fmt.Sprintf("%v", qa.Content)
 }
 
-type CreateActionAction struct {
-}
+// type CreateActionAction struct {
+// }
 
-func (caa CreateActionAction) perform(b *Bot, env *Environment) error {
-	return nil
-}
+// func (ca CreateActionAction) performFunc(env *Environment) func(*Bot) error {
+// 	return nil
+// }
