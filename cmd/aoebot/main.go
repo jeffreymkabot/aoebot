@@ -1,7 +1,3 @@
-/*
-aoebot uses a discord bot with token t to connect to your server and recreate the aoe2 chat experience
-Inspired by and modeled after github.com/hammerandchisel/airhornbot
-*/
 package main
 
 import (
@@ -23,12 +19,22 @@ func main() {
 	}
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
-	log.Printf("Hello World~")
-	bot, err := aoebot.New(*token, *owner, *dbURL)
+
+	driver, err := aoebot.NewDefaultDriver(*dbURL)
+	if err != nil {
+		log.Fatalf("Error in start default driver: %v", err)
+	}
+	defer driver.Close()
+
+	bot, err := aoebot.New(*token, *owner, driver)
+	if err != nil {
+		log.Fatalf("Error in create bot: %v", err)
+	}
+	bot.SetDriver(driver)
 
 	err = bot.Wakeup()
 	if err != nil {
-		log.Fatalf("Error in wakeup: %v\n", err)
+		log.Fatalf("Error in wakeup: %v", err)
 	}
 
 	c := make(chan os.Signal, 1)

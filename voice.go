@@ -20,10 +20,10 @@ const (
 // Creating a voicebox with newVoiceBox launches a goroutine that listens to payloads on the voicebox's queue channel
 // Since discord permits only one voice connection per guild,
 // Bot should create exactly one voicebox for each guild
+// Voicebox is like a specialized botroutine
 type voicebox struct {
 	queue chan<- *voicePayload
-	quit  chan<- struct{}
-	wait  *sync.WaitGroup
+	close func()
 }
 
 type voicePayload struct {
@@ -34,35 +34,36 @@ type voicePayload struct {
 // speakTo opens the conversation with a discord guild
 func (b *Bot) speakTo(g *discordgo.Guild) {
 	vb, ok := b.voiceboxes[g.ID]
-	if ok && vb.quit != nil {
-		close(vb.quit)
-		vb.quit = nil
-		// Use a wait group so the bot can finish disconnecting the old voice connection before making a new worker
-		vb.wait.Wait()
+	if ok {
+		vb.close()
 	}
 	b.voiceboxes[g.ID] = newVoiceBox(b.session, g)
 }
 
 func newVoiceBox(s *discordgo.Session, g *discordgo.Guild) *voicebox {
 	queue := make(chan *voicePayload, MaxVoiceQueue)
-	// close quit channel and all go routines that receive on it will receive it without blocking
+	// close quit channel and all attempts to receive it will receive it without blocking
+	// quit channel is hidden from the outside world
+	// accessed only through closure for voicebox.close
 	quit := make(chan struct{})
+	// Use a wait group so the bot can finish disconnecting the old voice connection before e.g. making a new worker
 	wg := &sync.WaitGroup{}
+	close := func() {
+		select {
+		case <-quit:
+			// already closed, don't close a closed channel
+			return
+		default:
+			close(quit)
+			// wait for payloadSender to return and hopefully disconnect from voice channel
+			wg.Wait()
+		}
+	}
 	wg.Add(1)
 	go payloadSender(s, g, queue, quit, wg)
 	return &voicebox{
 		queue: queue,
-		quit:  quit,
-		wait:  wg,
-	}
-}
-
-func (vb *voicebox) close() {
-	if vb.quit != nil {
-		close(vb.quit)
-		vb.quit = nil
-		// Wait for the voicebox's payloadSender goroutine to return
-		vb.wait.Wait()
+		close: close,
 	}
 }
 
@@ -149,14 +150,14 @@ PayloadLoop:
 			case <-quit:
 				return
 			case vc.OpusSend <- frame:
-			// TODO this could be a memory leak if we keep making new timers
+			// TODO this could be a memory leak if we keep making new timers?
 			case <-time.After(VoiceSendTimeout):
 				log.Printf("Opus send timeout in guild %v", g.ID)
 				break FrameLoop
 			}
 		}
 		_ = vc.Speaking(false)
-		// TODO this could be a memory leak if we keep making new timers
+		// TODO this could be a memory leak if we keep making new timers?
 		afkTimer = time.NewTimer(AfkTimeout).C
 	}
 }

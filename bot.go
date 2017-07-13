@@ -1,7 +1,3 @@
-/*
-Package aoebot uses a discord bot to connect to your server and recreate the aoe2 chat experience
-Inspired by and modeled after github.com/hammerandchisel/airhornbot
-*/
 package aoebot
 
 import (
@@ -27,7 +23,7 @@ type Bot struct {
 	killer     error
 	token      string
 	owner      string
-	driver     *aoebotDriver
+	driver     Driver
 	session    *discordgo.Session
 	self       *discordgo.User
 	routines   map[*botroutine]struct{}
@@ -38,17 +34,17 @@ type Bot struct {
 }
 
 // New initializes a bot
-func New(token string, owner string, dbURL string) (b *Bot, err error) {
+func New(token string, owner string, driver Driver) (b *Bot, err error) {
 	b = &Bot{
 		kill:       make(chan struct{}),
 		token:      token,
 		owner:      owner,
+		driver:     driver,
 		routines:   make(map[*botroutine]struct{}),
 		unhandlers: make(map[*func()]struct{}),
 		voiceboxes: make(map[string]*voicebox),
 		occupancy:  make(map[string]string),
 	}
-	b.driver = newAoebotDriver(dbURL)
 	b.session, err = discordgo.New("Bot " + b.token)
 	if err != nil {
 		return
@@ -57,10 +53,17 @@ func New(token string, owner string, dbURL string) (b *Bot, err error) {
 	return
 }
 
+// SetDriver assigns a new Driver to the Bot
+func (b *Bot) SetDriver(d Driver) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.driver = d
+}
+
 // modeled after default package context
 func (b *Bot) die(err error) {
 	if err == nil {
-		panic("calls to Bot.die require an error")
+		panic("calls to Bot.die require a non-nil error")
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -91,7 +94,6 @@ func (b *Bot) Wakeup() (err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	err = b.driver.wakeup()
 	if err != nil {
 		return
 	}
@@ -125,25 +127,17 @@ func (b *Bot) Sleep() {
 	}
 
 	for r := range b.routines {
-		if r.quit != nil {
-			close(r.quit)
-			r.quit = nil
-		}
+		r.close()
 		delete(b.routines, r)
 	}
 
 	for k, vb := range b.voiceboxes {
-		if vb.quit != nil {
-			close(vb.quit)
-			vb.quit = nil
-		}
+		vb.close()
 		delete(b.voiceboxes, k)
 	}
 
 	// close the session after closing voice boxes since closing voiceboxes attempts graceful disconnect using discord session
 	b.session.Close()
-
-	b.driver.sleep()
 
 	log.Printf("...closed session.")
 }
@@ -213,11 +207,7 @@ func (b *Bot) addHandlerOnce(handler interface{}) {
 }
 
 func (b *Bot) addRoutine(f func(<-chan struct{})) {
-	quit := make(chan struct{})
-	go f(quit)
-	r := &botroutine{
-		quit: quit,
-	}
+	r := newRoutine(f)
 	b.routines[r] = struct{}{}
 }
 
@@ -282,6 +272,7 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 		// %
 
 		actions := b.driver.Actions(env)
+		log.Printf("Found actions %v", actions)
 		b.dispatch(env, actions...)
 	}
 }
@@ -315,13 +306,30 @@ func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStat
 			// %
 
 			actions := b.driver.Actions(env)
+			log.Printf("Found actions %v", actions)
 			b.dispatch(env, actions...)
 		}
 	}
 }
 
 type botroutine struct {
-	quit chan<- struct{}
+	close func()
+}
+
+func newRoutine(f func(<-chan struct{})) *botroutine {
+	quit := make(chan struct{})
+	close := func() {
+		select {
+		case <-quit:
+			return
+		default:
+			close(quit)
+		}
+	}
+	go f(quit)
+	return &botroutine{
+		close: close,
+	}
 }
 
 // hardcoded experiment for now
@@ -370,6 +378,7 @@ func (b *Bot) randomVoiceInOpenMic() func(<-chan struct{}) {
 				// %
 
 				actions := b.driver.Actions(env)
+				log.Printf("Found actions %v", actions)
 				if len(actions) < 1 {
 					continue
 				}
