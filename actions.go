@@ -19,14 +19,10 @@ type Action interface {
 type ActionType string
 
 const (
-	null      ActionType = "null"
-	write     ActionType = "write"
-	say       ActionType = "say"
-	react     ActionType = "react"
-	stats     ActionType = "stats"
-	reconnect ActionType = "reconnect"
-	restart   ActionType = "restart"
-	quit      ActionType = "quit"
+	null  ActionType = "null"
+	write ActionType = "write"
+	say   ActionType = "say"
+	react ActionType = "react"
 )
 
 // WriteAction specifies content that can be written to a text channel
@@ -128,101 +124,3 @@ func (sa SayAction) kind() ActionType {
 func (sa SayAction) String() string {
 	return fmt.Sprintf("%v", sa.File)
 }
-
-// StatsAction indicates that runtime information should be written to a text channel
-type StatsAction struct {
-}
-
-func (sa StatsAction) performFunc(env *Environment) func(*Bot) error {
-	return func(b *Bot) error {
-		return b.Write(env.TextChannel.ID, b.Stats().String(), false)
-	}
-}
-
-func (sa StatsAction) kind() ActionType {
-	return stats
-}
-
-// ReconnectVoiceAction indicates that the bot should refresh its voice worker for a guild
-type ReconnectVoiceAction struct {
-	Content string
-}
-
-func (rva ReconnectVoiceAction) performFunc(env *Environment) func(*Bot) error {
-	return func(b *Bot) error {
-		if rva.Content != "" {
-			_ = b.Write(env.TextChannel.ID, rva.Content, false)
-		}
-		b.speakTo(env.Guild)
-		return nil
-	}
-}
-
-func (rva ReconnectVoiceAction) kind() ActionType {
-	return reconnect
-}
-
-func (rva ReconnectVoiceAction) String() string {
-	return fmt.Sprintf("%v", rva.Content)
-}
-
-// RestartAction indicates that the bot should restart its discord session
-type RestartAction struct {
-	Content string
-}
-
-func (ra RestartAction) performFunc(env *Environment) func(*Bot) error {
-	return func(b *Bot) error {
-		if ra.Content != "" {
-			_ = b.Write(env.TextChannel.ID, ra.Content, false)
-		}
-		b.Sleep()
-		return b.Wakeup()
-	}
-}
-
-func (ra RestartAction) kind() ActionType {
-	return restart
-}
-
-func (ra RestartAction) String() string {
-	return fmt.Sprintf("%v", ra.Content)
-}
-
-// QuitAction indicates that the bot should terminate execution
-type QuitAction struct {
-	Content string
-	Force   bool
-}
-
-func (qa QuitAction) performFunc(env *Environment) func(*Bot) error {
-	return func(b *Bot) error {
-		if qa.Content != "" {
-			_ = b.Write(env.TextChannel.ID, qa.Content, false)
-		}
-		if !qa.Force {
-			b.die(ErrQuit)
-		} else {
-			b.die(ErrForceQuit)
-		}
-		return nil
-	}
-}
-
-func (qa QuitAction) kind() ActionType {
-	return quit
-}
-
-func (qa QuitAction) String() string {
-	if qa.Force {
-		return fmt.Sprintf("force %v", qa.Content)
-	}
-	return fmt.Sprintf("%v", qa.Content)
-}
-
-// type CreateActionAction struct {
-// }
-
-// func (ca CreateActionAction) performFunc(env *Environment) func(*Bot) error {
-// 	return nil
-// }

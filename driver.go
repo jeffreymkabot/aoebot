@@ -3,11 +3,12 @@ package aoebot
 import (
 	"encoding/json"
 	"fmt"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 	"log"
 	"regexp"
 	"strings"
+
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 // Driver is used by a Bot to discover Actions corresponding to an Environment
@@ -136,13 +137,9 @@ func NewActionEnvelope(a Action) ActionEnvelope {
 // ActionTypeMap is a one-to-one correspondence between an ActionType and a type implementing Action
 // Calling a function retrieved from ActionTypeMap returns a pointer to a concrete instance of that Type
 var ActionTypeMap = map[ActionType]func() Action{
-	write:     func() Action { return &WriteAction{} },
-	say:       func() Action { return &SayAction{} },
-	react:     func() Action { return &ReactAction{} },
-	stats:     func() Action { return &StatsAction{} },
-	reconnect: func() Action { return &ReconnectVoiceAction{} },
-	restart:   func() Action { return &RestartAction{} },
-	quit:      func() Action { return &QuitAction{} },
+	write: func() Action { return &WriteAction{} },
+	say:   func() Action { return &SayAction{} },
+	react: func() Action { return &ReactAction{} },
 }
 
 // SetBSON lets ActionEnvelope implement the bson.Setter interface

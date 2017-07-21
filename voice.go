@@ -9,7 +9,7 @@ import (
 
 const (
 	// MaxVoiceQueue is the maximum number of voice payloads that can wait to be processed for a particular guild
-	MaxVoiceQueue = 100
+	MaxVoiceQueue = 20
 	// VoiceSendTimeout is the amount of time to wait on the voice send channel before giving up on a voice payload
 	VoiceSendTimeout = 1 * time.Second
 	// AfkTimeout is the amount of time to wait for another voice payload before joining the guild's afk channel

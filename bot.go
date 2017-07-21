@@ -3,11 +3,13 @@ package aoebot
 import (
 	"errors"
 	"fmt"
-	"github.com/bwmarrin/discordgo"
 	"log"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 // ErrQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit
@@ -16,13 +18,21 @@ var ErrQuit = errors.New("Dispatched a quit action")
 // ErrForceQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit immediately
 var ErrForceQuit = errors.New("Dispatched a force quit action")
 
+const (
+	// MaxManagedChannels is the maximum number of ad hoc channels that aoebot is allowed to have created at any given time
+	MaxManagedChannels = 10
+)
+
 // Bot represents a discord bot
 type Bot struct {
-	mu         sync.Mutex // TODO synchronize state and use of maps
-	kill       chan struct{}
-	killer     error
-	token      string
-	owner      string
+	mu     sync.Mutex // TODO synchronize state and use of maps
+	kill   chan struct{}
+	killer error
+	token  string
+	owner  string
+	prefix string
+	// commands   map[string]func(*Bot, *Environment, ...string) error
+	commands   []*command
 	driver     Driver
 	session    *discordgo.Session
 	self       *discordgo.User
@@ -39,6 +49,7 @@ func New(token string, owner string, driver Driver) (b *Bot, err error) {
 		kill:       make(chan struct{}),
 		token:      token,
 		owner:      owner,
+		prefix:     `@!`,
 		driver:     driver,
 		routines:   make(map[*botroutine]struct{}),
 		unhandlers: make(map[*func()]struct{}),
@@ -49,7 +60,17 @@ func New(token string, owner string, driver Driver) (b *Bot, err error) {
 	if err != nil {
 		return
 	}
-	b.session.LogLevel = discordgo.LogInformational
+	// b.session.LogLevel = discordgo.LogWarning
+	b.commands = []*command{
+		help,
+		testwrite,
+		testreact,
+		testvoice,
+		stats,
+		reconnect,
+		restart,
+		shutdown,
+	}
 	return
 }
 
@@ -269,11 +290,17 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 			return
 		}
 
-		// %
-
-		actions := b.driver.Actions(env)
-		log.Printf("Found actions %v", actions)
-		b.dispatch(env, actions...)
+		if strings.HasPrefix(env.TextMessage.Content, b.prefix) {
+			cmdArgs := strings.Fields(strings.TrimSpace(strings.TrimPrefix(env.TextMessage.Content, b.prefix)))
+			err = b.exec(env, cmdArgs)
+			if err != nil {
+				log.Printf("Error executing command %v", err)
+			}
+		} else {
+			actions := b.driver.Actions(env)
+			log.Printf("Found actions %v", actions)
+			b.dispatch(env, actions...)
+		}
 	}
 }
 
@@ -388,6 +415,26 @@ func (b *Bot) randomVoiceInOpenMic() func(<-chan struct{}) {
 			}
 		}
 	}
+}
+
+func (b *Bot) exec(env *Environment, args []string) error {
+	if len(args) == 0 {
+	}
+	name := strings.ToLower(args[0])
+	for _, c := range b.commands {
+		if c.name() == name {
+			if c.isProtected && env.Author.ID != b.owner {
+				_ = b.Write(env.TextChannel.ID, "Only dad can use that one 🙃", false)
+				return ErrProtectedCommand
+			}
+			err := c.run(b, env, args[1:])
+			if err != nil {
+				_ = b.Write(env.TextChannel.ID, fmt.Sprintf("🤔\n %s", err), false)
+			}
+			return err
+		}
+	}
+	return ErrNoCommand
 }
 
 func (b *Bot) dispatch(env *Environment, actions ...Action) {
