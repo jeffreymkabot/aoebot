@@ -15,6 +15,10 @@ import (
 // Clients can implement their own driver type to control the behavior of a Bot
 type Driver interface {
 	Actions(*Environment) []Action
+	Channels() []Channel
+	ChannelsGuild(guildID string) []Channel
+	ChannelAdd(Channel) error
+	ChannelDelete(...string) error
 }
 
 // DefaultDriver is the default implementation of the Driver interface
@@ -33,6 +37,46 @@ func NewDefaultDriver(dbURL string) (d *DefaultDriver, err error) {
 		session,
 	}
 	return
+}
+
+func (d *DefaultDriver) Channels() []Channel {
+	channels := []Channel{}
+	coll := d.DB("aoebot").C("channels")
+	err := coll.Find(nil).All(&channels)
+	if err != nil {
+		log.Printf("Error in query %v", err)
+	}
+	return channels
+}
+
+func (d *DefaultDriver) ChannelsGuild(guildID string) []Channel {
+	channels := []Channel{}
+	coll := d.DB("aoebot").C("channels")
+	query := bson.M{
+		"guildid": guildID,
+	}
+	err := coll.Find(query).All(&channels)
+	if err != nil {
+		log.Printf("Error in query %v", err)
+	}
+	return channels
+}
+
+func (d *DefaultDriver) ChannelAdd(ch Channel) error {
+	coll := d.DB("aoebot").C("channels")
+	err := coll.Insert(ch)
+	return err
+}
+
+func (d *DefaultDriver) ChannelDelete(channelID ...string) error {
+	coll := d.DB("aoebot").C("channels")
+	query := bson.M{
+		"id": bson.M{
+			"$in": channelID,
+		},
+	}
+	err := coll.Remove(query)
+	return err
 }
 
 // Actions are discovered as subdocments of entries in the "conditions" collection

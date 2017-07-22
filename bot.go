@@ -19,19 +19,18 @@ var ErrQuit = errors.New("Dispatched a quit action")
 var ErrForceQuit = errors.New("Dispatched a force quit action")
 
 const (
-	// MaxManagedChannels is the maximum number of ad hoc channels that aoebot is allowed to have created at any given time
-	MaxManagedChannels = 10
+	// MaxManagedChannels is the maximum number of ad hoc channels per guild that aoebot is allowed to have created at any given time
+	MaxManagedChannels = 3
 )
 
 // Bot represents a discord bot
 type Bot struct {
-	mu     sync.Mutex // TODO synchronize state and use of maps
-	kill   chan struct{}
-	killer error
-	token  string
-	owner  string
-	prefix string
-	// commands   map[string]func(*Bot, *Environment, ...string) error
+	mu         sync.Mutex // TODO synchronize state and use of maps
+	kill       chan struct{}
+	killer     error
+	token      string
+	owner      string
+	prefix     string
 	commands   []*command
 	driver     Driver
 	session    *discordgo.Session
@@ -70,6 +69,7 @@ func New(token string, owner string, driver Driver) (b *Bot, err error) {
 		reconnect,
 		restart,
 		shutdown,
+		addchannel,
 	}
 	return
 }
@@ -259,6 +259,25 @@ func (b *Bot) registerGuild(g *discordgo.Guild) {
 		// TODO bots could be in a channel in multiple guilds
 		b.occupancy[vs.UserID] = vs.ChannelID
 	}
+	channels := b.driver.ChannelsGuild(g.ID)
+	if len(channels) > 0 {
+		delete := func(ch Channel) {
+			log.Printf("Deleting channel %s", ch.Name)
+			b.session.ChannelDelete(ch.ID)
+			b.driver.ChannelDelete(ch.ID)
+		}
+		isEmpty := func(ch Channel) bool {
+			for _, v := range g.VoiceStates {
+				if v.ChannelID == ch.ID {
+					return false
+				}
+			}
+			return true
+		}
+		for _, ch := range channels {
+			b.addRoutine(channelManager(ch, delete, isEmpty))
+		}
+	}
 }
 
 func (b *Bot) onGuildCreate() func(*discordgo.Session, *discordgo.GuildCreate) {
@@ -292,10 +311,7 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 
 		if strings.HasPrefix(env.TextMessage.Content, b.prefix) {
 			cmdArgs := strings.Fields(strings.TrimSpace(strings.TrimPrefix(env.TextMessage.Content, b.prefix)))
-			err = b.exec(env, cmdArgs)
-			if err != nil {
-				log.Printf("Error executing command %v", err)
-			}
+			go b.exec(env, cmdArgs)
 		} else {
 			actions := b.driver.Actions(env)
 			log.Printf("Found actions %v", actions)
@@ -419,6 +435,7 @@ func (b *Bot) randomVoiceInOpenMic() func(<-chan struct{}) {
 
 func (b *Bot) exec(env *Environment, args []string) error {
 	if len(args) == 0 {
+		return ErrNoCommand
 	}
 	name := strings.ToLower(args[0])
 	for _, c := range b.commands {
@@ -427,9 +444,15 @@ func (b *Bot) exec(env *Environment, args []string) error {
 				_ = b.Write(env.TextChannel.ID, "Only dad can use that one 🙃", false)
 				return ErrProtectedCommand
 			}
+			defer func() {
+				if err := recover(); err != nil {
+					log.Printf("Recovered from panic in execute %v by %s", c.name(), env.Author)
+				}
+			}()
+			log.Printf("Execute %v by %s", c.name(), env.Author)
 			err := c.run(b, env, args[1:])
 			if err != nil {
-				_ = b.Write(env.TextChannel.ID, fmt.Sprintf("🤔\n %s", err), false)
+				_ = b.Write(env.TextChannel.ID, fmt.Sprintf("🤔...\n %s", err), false)
 			}
 			return err
 		}
