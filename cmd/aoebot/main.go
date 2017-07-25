@@ -32,7 +32,7 @@ func main() {
 	}
 	bot.SetDriver(driver)
 
-	err = bot.Wakeup()
+	err = bot.Start()
 	if err != nil {
 		log.Fatalf("Error in wakeup: %v", err)
 	}
@@ -43,12 +43,12 @@ func main() {
 	select {
 	case signal := <-c:
 		if signal != os.Kill {
-			bot.Sleep()
+			bot.Stop()
 		}
 	case <-bot.Killed():
 		// treat force quit like SIGKILL
 		if bot.Killer() != aoebot.ErrForceQuit {
-			bot.Sleep()
+			bot.Stop()
 		}
 	}
 }

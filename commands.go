@@ -19,8 +19,6 @@ var ErrTooManyArguments = errors.New("Command was invoked with too many argument
 // ErrProtectedCommand indicates that a user attempted to invoke a command they do not have permission for
 var ErrProtectedCommand = errors.New("Someone who is not the owner attempted to execute a protected command")
 
-var ErrNoCommand = errors.New("Missing command")
-
 // modeled after golang.org/src/cmd/go/main.Command
 type command struct {
 	usage       string
@@ -116,7 +114,7 @@ var reconnect = &command{
 		if env.Guild == nil {
 			return errors.New("No guild")
 		}
-		_ = b.Write(env.TextChannel.ID, `Sure thing dad 🙂`, false)
+		_ = b.Write(env.TextChannel.ID, `Sure thing 🙂`, false)
 		b.speakTo(env.Guild)
 		return nil
 	},
@@ -128,8 +126,8 @@ var restart = &command{
 	isProtected: true,
 	run: func(b *Bot, env *Environment, args []string) error {
 		_ = b.Write(env.TextChannel.ID, `Okay dad 👀`, false)
-		b.Sleep()
-		return b.Wakeup()
+		b.Stop()
+		return b.Start()
 	},
 }
 
@@ -158,7 +156,6 @@ var addchannel = &command{
 	Use the "openmic" flag to create a voice channel that overrides the "Use Voice Activity" permission.
 	Voice channels are automatically deleted when they are vacant or when I shut down.
 	I will only create so many voice channels for each guild.`,
-	// isProtected: true,
 	run: func(b *Bot, env *Environment, args []string) error {
 		if env.Guild == nil {
 			return errors.New("No guild")
@@ -166,16 +163,19 @@ var addchannel = &command{
 		if len(b.driver.ChannelsGuild(env.Guild.ID)) >= MaxManagedChannels {
 			return errors.New("I'm not allowed to make any more channels in this guild 😦")
 		}
+
 		isOpen := len(args) > 0 && strings.ToLower(args[0]) == `openmic`
 		chName := fmt.Sprintf("@!%s", env.Author)
 		if isOpen {
 			chName = `open` + chName
 		}
+
 		ch, err := b.session.GuildChannelCreate(env.Guild.ID, chName, `voice`)
 		if err != nil {
 			return err
 		}
 		log.Printf("Created channel %s", ch.Name)
+
 		delete := func(ch Channel) {
 			log.Printf("Deleting channel %s", ch.Name)
 			b.session.ChannelDelete(ch.ID)
@@ -186,6 +186,7 @@ var addchannel = &command{
 			delete(ch)
 			return err
 		}
+
 		isEmpty := func(ch Channel) bool {
 			for _, v := range env.Guild.VoiceStates {
 				if v.ChannelID == ch.ID {
@@ -195,6 +196,7 @@ var addchannel = &command{
 			return true
 		}
 		b.addRoutine(channelManager(ch, delete, isEmpty))
+
 		if isOpen {
 			err = b.session.ChannelPermissionSet(ch.ID, env.Guild.ID, `role`, discordgo.PermissionVoiceUseVAD, 0)
 			if err != nil {
@@ -220,4 +222,22 @@ func channelManager(ch Channel, delete func(ch Channel), isEmpty func(ch Channel
 			}
 		}
 	}
+}
+
+var addreact = &command{
+	usage: `addreact [emoji] [phrase]`,
+	short: ``,
+	long:  ``,
+}
+
+var addwrite = &command{
+	usage: `addwrite`,
+	short: ``,
+	long:  ``,
+}
+
+var addvoice = &command{
+	usage: ``,
+	short: ``,
+	long:  ``,
 }

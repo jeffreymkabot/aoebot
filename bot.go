@@ -21,6 +21,8 @@ var ErrForceQuit = errors.New("Dispatched a force quit action")
 const (
 	// MaxManagedChannels is the maximum number of ad hoc channels per guild that aoebot is allowed to have created at any given time
 	MaxManagedChannels = 3
+
+	ManagedChannelTimeout = 60 * time.Second
 )
 
 // Bot represents a discord bot
@@ -35,10 +37,10 @@ type Bot struct {
 	driver     Driver
 	session    *discordgo.Session
 	self       *discordgo.User
-	routines   map[*botroutine]struct{}
-	unhandlers map[*func()]struct{}
-	voiceboxes map[string]*voicebox // TODO voiceboxes is vulnerable to concurrent read/write
-	occupancy  map[string]string    // TODO occupancy is vulnerable to concurrent read/write
+	routines   map[*botroutine]struct{} // Set
+	unhandlers map[*func()]struct{}     // Set
+	voiceboxes map[string]*voicebox     // TODO voiceboxes is vulnerable to concurrent read/write
+	occupancy  map[string]string        // TODO occupancy is vulnerable to concurrent read/write
 	aesthetic  bool
 }
 
@@ -110,8 +112,8 @@ func (b *Bot) Killer() error {
 	return b.killer
 }
 
-// Wakeup initiates a new database session and discord session
-func (b *Bot) Wakeup() (err error) {
+// Start initiates a and discord session
+func (b *Bot) Start() (err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -134,8 +136,8 @@ func (b *Bot) Wakeup() (err error) {
 	return
 }
 
-// Sleep removes event handlers, stops all workers, closes the discord session, and closes the db session.
-func (b *Bot) Sleep() {
+// Stop removes event handlers, stops all workers, closes the discord session, and closes the db session.
+func (b *Bot) Stop() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	log.Printf("Closing session...")
@@ -227,6 +229,26 @@ func (b *Bot) addHandlerOnce(handler interface{}) {
 	b.unhandlers[&unhandler] = struct{}{}
 }
 
+type botroutine struct {
+	close func()
+}
+
+func newRoutine(f func(<-chan struct{})) *botroutine {
+	quit := make(chan struct{})
+	close := func() {
+		select {
+		case <-quit:
+			return
+		default:
+			close(quit)
+		}
+	}
+	go f(quit)
+	return &botroutine{
+		close: close,
+	}
+}
+
 func (b *Bot) addRoutine(f func(<-chan struct{})) {
 	r := newRoutine(f)
 	b.routines[r] = struct{}{}
@@ -310,11 +332,13 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 		}
 
 		if strings.HasPrefix(env.TextMessage.Content, b.prefix) {
-			cmdArgs := strings.Fields(strings.TrimSpace(strings.TrimPrefix(env.TextMessage.Content, b.prefix)))
-			go b.exec(env, cmdArgs)
+			args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(env.TextMessage.Content, b.prefix)))
+			cmd, args := b.command(args)
+			log.Printf("Exec cmd %v by %s with %v", cmd.name(), env.Author, args)
+			b.exec(env, cmd, args)
 		} else {
 			actions := b.driver.Actions(env)
-			log.Printf("Found actions %v", actions)
+			log.Printf("Dispatch actions %v", actions)
 			b.dispatch(env, actions...)
 		}
 	}
@@ -352,26 +376,6 @@ func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStat
 			log.Printf("Found actions %v", actions)
 			b.dispatch(env, actions...)
 		}
-	}
-}
-
-type botroutine struct {
-	close func()
-}
-
-func newRoutine(f func(<-chan struct{})) *botroutine {
-	quit := make(chan struct{})
-	close := func() {
-		select {
-		case <-quit:
-			return
-		default:
-			close(quit)
-		}
-	}
-	go f(quit)
-	return &botroutine{
-		close: close,
 	}
 }
 
@@ -433,31 +437,36 @@ func (b *Bot) randomVoiceInOpenMic() func(<-chan struct{}) {
 	}
 }
 
-func (b *Bot) exec(env *Environment, args []string) error {
-	if len(args) == 0 {
-		return ErrNoCommand
-	}
-	name := strings.ToLower(args[0])
-	for _, c := range b.commands {
-		if c.name() == name {
-			if c.isProtected && env.Author.ID != b.owner {
-				_ = b.Write(env.TextChannel.ID, "Only dad can use that one 🙃", false)
-				return ErrProtectedCommand
+func (b *Bot) command(args []string) (*command, []string) {
+	if len(args) > 0 {
+		cmd := strings.ToLower(args[0])
+		args := args[1:]
+		for _, c := range b.commands {
+			if c.name() == cmd {
+				return c, args
 			}
-			defer func() {
-				if err := recover(); err != nil {
-					log.Printf("Recovered from panic in execute %v by %s", c.name(), env.Author)
-				}
-			}()
-			log.Printf("Execute %v by %s", c.name(), env.Author)
-			err := c.run(b, env, args[1:])
-			if err != nil {
-				_ = b.Write(env.TextChannel.ID, fmt.Sprintf("🤔...\n %s", err), false)
-			}
-			return err
 		}
 	}
-	return ErrNoCommand
+	return help, []string{}
+}
+
+func (b *Bot) exec(env *Environment, cmd *command, args []string) {
+	if cmd.isProtected && env.Author.ID != b.owner {
+		_ = b.Write(env.TextChannel.ID, "Sorry, only dad can use that one 🙃", false)
+		return
+	}
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("Recovered from panic in exec %v with %v: %v", cmd.name(), args, err)
+		}
+	}()
+
+	err := cmd.run(b, env, args)
+	if err != nil {
+		log.Printf("Error in exec %v with %v: %v", cmd.name(), args, err)
+		_ = b.Write(env.TextChannel.ID, fmt.Sprintf("🤔...\n%v", err), false)
+		return
+	}
 }
 
 func (b *Bot) dispatch(env *Environment, actions ...Action) {
