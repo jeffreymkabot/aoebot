@@ -37,10 +37,22 @@ var help = &command{
 	usage: `help [command]`,
 	short: `Get help about my commands`,
 	run: func(b *Bot, env *Environment, args []string) error {
+		foundArg := false
 		buf := &bytes.Buffer{}
 		w := tabwriter.NewWriter(buf, 0, 4, 0, ' ', 0)
 		fmt.Fprintf(w, "```\n")
-		if len(args) == 0 {
+		if len(args) == 1 {
+			for _, c := range b.commands {
+				if strings.ToLower(args[0]) == strings.ToLower(c.name()) {
+					foundArg = true
+					fmt.Fprintf(w, "Usage: \t%s\n\n", c.usage)
+					if len(c.long) > 0 {
+						fmt.Fprintf(w, "%s\n", c.long)
+					}
+				}
+			}
+		}
+		if !foundArg {
 			fmt.Fprintf(w, "All commands start with \"%s\".\n", b.prefix)
 			fmt.Fprintf(w, "For example, \"%s help\".\n\n", b.prefix)
 			for _, c := range b.commands {
@@ -48,17 +60,6 @@ var help = &command{
 			}
 			fmt.Fprintf(w, "\nTo get more help about a command use help [command].\n")
 			fmt.Fprintf(w, "More coming soon!\n")
-		} else if len(args) == 1 {
-			for _, c := range b.commands {
-				if strings.ToLower(args[0]) == strings.ToLower(c.name()) {
-					fmt.Fprintf(w, "Usage: \t%s\n\n", c.usage)
-					if len(c.long) > 0 {
-						fmt.Fprintf(w, "%s\n", c.long)
-					}
-				}
-			}
-		} else {
-			return ErrTooManyArguments
 		}
 		fmt.Fprintf(w, "```\n")
 		w.Flush()
