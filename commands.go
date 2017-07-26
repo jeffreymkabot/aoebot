@@ -25,7 +25,6 @@ type command struct {
 	short       string
 	long        string
 	isProtected bool
-	flag        flag.FlagSet
 	run         func(*Bot, *Environment, []string) error
 }
 
@@ -132,11 +131,14 @@ var restart = &command{
 }
 
 var shutdown = &command{
-	usage:       `shutdown [hard]`,
+	usage:       `shutdown [-hard]`,
 	short:       `Signal to my host application to quit`,
 	isProtected: true,
 	run: func(b *Bot, env *Environment, args []string) error {
-		if len(args) > 0 && strings.ToLower(args[0]) == `hard` {
+		f := flag.NewFlagSet("shutdown", flag.ContinueOnError)
+		isHard := f.Bool("hard", false, "shutdown without cleanup")
+		err := f.Parse(args)
+		if err != nil && *isHard {
 			_ = b.Write(env.TextChannel.ID, `💀`, false)
 			b.die(ErrForceQuit)
 		} else {
@@ -150,23 +152,30 @@ var shutdown = &command{
 type Channel *discordgo.Channel
 
 var addchannel = &command{
-	usage: `addchannel [openmic]`,
+	usage: `addchannel [-openmic] [-users n]`,
 	short: `Create a temporary voice channel`,
 	long: `Create an ad hoc voice channel in this guild.
-	Use the "openmic" flag to create a voice channel that overrides the "Use Voice Activity" permission.
+	Use the "openmic" flag to override the channel's "Use Voice Activity" permission.
+	Use the "users" flag to limit the number of users that can join the channel.
 	Voice channels are automatically deleted when they are vacant or when I shut down.
 	I will only create so many voice channels for each guild.`,
 	run: func(b *Bot, env *Environment, args []string) error {
+		f := flag.NewFlagSet("addchannel", flag.ContinueOnError)
+		isOpen := f.Bool("openmic", false, "permit voice activity")
+		userLimit := f.Int("users", 0, "limit users to `n`")
+		err := f.Parse(args)
+		if err != nil {
+			return err
+		}
+
 		if env.Guild == nil {
 			return errors.New("No guild")
 		}
 		if len(b.driver.ChannelsGuild(env.Guild.ID)) >= MaxManagedChannels {
 			return errors.New("I'm not allowed to make any more channels in this guild 😦")
 		}
-
-		isOpen := len(args) > 0 && strings.ToLower(args[0]) == `openmic`
 		chName := fmt.Sprintf("@!%s", env.Author)
-		if isOpen {
+		if *isOpen {
 			chName = `open` + chName
 		}
 
@@ -178,8 +187,8 @@ var addchannel = &command{
 
 		delete := func(ch Channel) {
 			log.Printf("Deleting channel %s", ch.Name)
-			b.session.ChannelDelete(ch.ID)
-			b.driver.ChannelDelete(ch.ID)
+			_, _ = b.session.ChannelDelete(ch.ID)
+			_ = b.driver.ChannelDelete(ch.ID)
 		}
 		err = b.driver.ChannelAdd(Channel(ch))
 		if err != nil {
@@ -197,8 +206,18 @@ var addchannel = &command{
 		}
 		b.addRoutine(channelManager(ch, delete, isEmpty))
 
-		if isOpen {
+		if *isOpen {
 			err = b.session.ChannelPermissionSet(ch.ID, env.Guild.ID, `role`, discordgo.PermissionVoiceUseVAD, 0)
+			if err != nil {
+				delete(ch)
+				return err
+			}
+		}
+		if userLimit != nil {
+			data := struct {
+				UserLimit int `json:"user_limit"`
+			}{*userLimit}
+			_, err = b.session.RequestWithBucketID("PATCH", discordgo.EndpointChannel(ch.ID), data, discordgo.EndpointChannel(ch.ID))
 			if err != nil {
 				delete(ch)
 				return err
