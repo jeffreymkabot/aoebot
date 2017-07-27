@@ -245,10 +245,11 @@ func channelManager(ch Channel, delete func(ch Channel), isEmpty func(ch Channel
 }
 
 var addreact = &command{
-	usage:       `addreact`, // addreact [emoji] [phrase], could support regex with a -r flag
-	short:       ``,
-	long:        ``,
-	isProtected: true,
+	usage: `addreact [emoji] [phrase]`, // could support regex with a -r flag
+	short: `Associate an emoji with a phrase`,
+	long: `Create an automatic message reaction based on the content of a message.
+	Phrase is not case-sensitive and must match the entire message content to trigger the reaction.
+	Associations are managed per guild.`,
 	run: func(b *Bot, env *Environment, args []string) error {
 		if len(args) < 2 {
 			return errors.New("Not enough arguments")
@@ -275,7 +276,6 @@ var addreact = &command{
 			return errors.New("Bad phrase")
 		}
 		cond := &Condition{
-			Name:            fmt.Sprintf("react %s on (%s)", emoji, phrase),
 			EnvironmentType: message,
 			GuildID:         env.Guild.ID,
 			Phrase:          phrase,
@@ -292,10 +292,11 @@ var addreact = &command{
 }
 
 var delreact = &command{
-	usage:       `delreact`,
-	short:       ``,
-	long:        ``,
-	isProtected: true,
+	usage: `delreact [emoji] [phrase]`,
+	short: `Unassociate an emoji with a phrase.`,
+	long: `Remove an existing automatic message reaction in this guild.
+	This is the inverse of the addreact command.
+	For example, an assocation created by "addreact 😊 hello" can be removed with "delreact 😊 hello".`,
 	run: func(b *Bot, env *Environment, args []string) error {
 		if len(args) < 2 {
 			return errors.New("Not enough arguments")
@@ -312,7 +313,6 @@ var delreact = &command{
 		}
 
 		cond := &Condition{
-			Name:            fmt.Sprintf("react %s on (%s)", emoji, phrase),
 			EnvironmentType: message,
 			GuildID:         env.Guild.ID,
 			Phrase:          phrase,
@@ -325,7 +325,17 @@ var delreact = &command{
 		if err != nil {
 			return err
 		}
+		_ = b.Write(env.TextChannel.ID, `🗑️`, false)
 		return nil
+	},
+}
+
+var getreact = &command{
+	usage: `getreact`,
+	short: `coming soon`,
+	long:  ``,
+	run: func(b *Bot, env *Environment, args []string) error {
+		return b.Write(env.TextChannel.ID, `🚧👷✋`, false)
 	},
 }
 

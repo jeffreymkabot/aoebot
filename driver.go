@@ -2,6 +2,7 @@ package aoebot
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -70,27 +71,28 @@ func (d *DefaultDriver) ConditionsGuild(guildID string) []Condition {
 	conditions := []Condition{}
 	coll := d.DB("aoebot").C("conditions")
 	query := bson.M{
-		"guild": guildID,
+		"createdby": bson.M{
+			"$exists": true,
+		},
+		"guild":   guildID,
+		"enabled": true,
 	}
 	err := coll.Find(query).All(&conditions)
 	if err != nil {
 		log.Printf("Error in query guild custom conditions %v", err)
 	}
-	log.Printf("Found %v conditions for guild", len(conditions))
+	log.Printf("Found %v custom conditions for guild", len(conditions))
 	return conditions
 }
 
 func (d *DefaultDriver) ConditionAdd(c *Condition, creator string) error {
+	if len(creator) < 1 {
+		return errors.New("Creator name is too short")
+	}
 	coll := d.DB("aoebot").C("conditions")
-	// conditions := []Condition{}
-	// bq, _ := bson.Marshal(c)
-	// q := query{}
-	// _ = bson.Unmarshal(bq, &q)
-	// log.Printf("cond q %s", q)
-	// coll.Find(q).All(&conditions)
-	// log.Printf("cond from q %#v", conditions)
 	info, err := coll.Upsert(c, bson.M{
 		"$set": bson.M{
+			"name":      c.GeneratedName(),
 			"createdby": creator,
 			"enabled":   true,
 		},
@@ -103,7 +105,9 @@ func (d *DefaultDriver) ConditionAdd(c *Condition, creator string) error {
 }
 
 func (d *DefaultDriver) ConditionDelete(c *Condition) error {
-	return nil
+	coll := d.DB("aoebot").C("conditions")
+	err := coll.Remove(c)
+	return err
 }
 
 func (d *DefaultDriver) Channels() []Channel {
@@ -195,7 +199,7 @@ func emptyOrEqual(field string, value interface{}) bson.M {
 
 // Condition defines a set of requirements an environment should meet for a particular action to be performed on that environment
 type Condition struct {
-	Name            string          `json:"name" bson:"name"`
+	Name            string          `json:"name,omitempty" bson:"name,omitempty"`
 	IsEnabled       bool            `json:"enabled,omitempty" bson:"enabled,omitempty"`
 	CreatedBy       string          `json:"createdby,omitempty" bson:"createdby,omitempty"`
 	EnvironmentType EnvironmentType `json:"type" bson:"type"`
@@ -206,6 +210,10 @@ type Condition struct {
 	VoiceChannelID  string          `json:"voiceChannel,omitempty" bson:"voiceChannel,omitempty"`
 	UserID          string          `json:"user,omitempty" bson:"user,omitempty"`
 	Action          ActionEnvelope  `json:"action" bson:"action"`
+}
+
+func (c Condition) GeneratedName() string {
+	return fmt.Sprintf("%s %s on (%s) in %s", c.Action.Type, c.Action.Action, c.Phrase, c.GuildID)
 }
 
 // ActionEnvelope encapsulates an Action and its ActionType

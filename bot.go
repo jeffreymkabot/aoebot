@@ -67,6 +67,8 @@ func New(token string, owner string, driver Driver) (b *Bot, err error) {
 		help,
 		addchannel,
 		addreact,
+		delreact,
+		getreact,
 		stats,
 		source,
 		testwrite,
