@@ -17,6 +17,7 @@ type Driver interface {
 	Actions(*Environment) []Action
 	ConditionsGuild(guildID string) []Condition
 	ConditionAdd(*Condition, string) error
+	ConditionDelete(*Condition) error
 	Channels() []Channel
 	ChannelsGuild(guildID string) []Channel
 	ChannelAdd(Channel) error
@@ -39,6 +40,70 @@ func NewDefaultDriver(dbURL string) (d *DefaultDriver, err error) {
 		session,
 	}
 	return
+}
+
+// Actions are discovered as subdocments of entries in the "conditions" collection
+// Conditions are specify properties of Environments that they correspond to
+func (d *DefaultDriver) Actions(env *Environment) []Action {
+	actions := []Action{}
+	coll := d.DB("aoebot").C("conditions")
+	query := queryEnvironment(env)
+	log.Printf("Using query %s", query)
+	conditions := []Condition{}
+	err := coll.Find(query).All(&conditions)
+	if err != nil {
+		log.Printf("Error in query %v", err)
+	}
+	for _, c := range conditions {
+		if c.RegexPhrase != "" && env.TextMessage != nil {
+			if regexp.MustCompile(c.RegexPhrase).MatchString(strings.ToLower(env.TextMessage.Content)) {
+				actions = append(actions, c.Action.Action)
+			}
+		} else {
+			actions = append(actions, c.Action.Action)
+		}
+	}
+	return actions
+}
+
+func (d *DefaultDriver) ConditionsGuild(guildID string) []Condition {
+	conditions := []Condition{}
+	coll := d.DB("aoebot").C("conditions")
+	query := bson.M{
+		"guild": guildID,
+	}
+	err := coll.Find(query).All(&conditions)
+	if err != nil {
+		log.Printf("Error in query guild custom conditions %v", err)
+	}
+	log.Printf("Found %v conditions for guild", len(conditions))
+	return conditions
+}
+
+func (d *DefaultDriver) ConditionAdd(c *Condition, creator string) error {
+	coll := d.DB("aoebot").C("conditions")
+	// conditions := []Condition{}
+	// bq, _ := bson.Marshal(c)
+	// q := query{}
+	// _ = bson.Unmarshal(bq, &q)
+	// log.Printf("cond q %s", q)
+	// coll.Find(q).All(&conditions)
+	// log.Printf("cond from q %#v", conditions)
+	info, err := coll.Upsert(c, bson.M{
+		"$set": bson.M{
+			"createdby": creator,
+			"enabled":   true,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	log.Printf("Added Condition %#v", info)
+	return nil
+}
+
+func (d *DefaultDriver) ConditionDelete(c *Condition) error {
+	return nil
 }
 
 func (d *DefaultDriver) Channels() []Channel {
@@ -79,57 +144,6 @@ func (d *DefaultDriver) ChannelDelete(channelID ...string) error {
 	}
 	err := coll.Remove(query)
 	return err
-}
-
-func (d *DefaultDriver) ConditionsGuild(guildID string) []Condition {
-	conditions := []Condition{}
-	coll := d.DB("aoebot").C("conditions")
-	query := bson.M{
-		"guildid": guildID,
-	}
-	err := coll.Find(query).All(&conditions)
-	if err != nil {
-		log.Printf("Error in query guild custom conditions %v", err)
-	}
-	return conditions
-}
-
-func (d *DefaultDriver) ConditionAdd(c *Condition, creator string) error {
-	coll := d.DB("aoebot").C("conditions")
-	info, err := coll.Upsert(coll, bson.M{
-		"$set": bson.M{
-			"createdby": creator,
-		},
-	})
-	if err != nil {
-		return err
-	}
-	log.Printf("Added Condition %#v", info)
-	return nil
-}
-
-// Actions are discovered as subdocments of entries in the "conditions" collection
-// Conditions are specify properties of Environments that they correspond to
-func (d *DefaultDriver) Actions(env *Environment) []Action {
-	actions := []Action{}
-	coll := d.DB("aoebot").C("conditions")
-	query := queryEnvironment(env)
-	log.Printf("Using query %s", query)
-	conditions := []Condition{}
-	err := coll.Find(query).All(&conditions)
-	if err != nil {
-		log.Printf("Error in query %v", err)
-	}
-	for _, c := range conditions {
-		if c.RegexPhrase != "" && env.TextMessage != nil {
-			if regexp.MustCompile(c.RegexPhrase).MatchString(strings.ToLower(env.TextMessage.Content)) {
-				actions = append(actions, c.Action.Action)
-			}
-		} else {
-			actions = append(actions, c.Action.Action)
-		}
-	}
-	return actions
 }
 
 type query bson.M
@@ -182,6 +196,7 @@ func emptyOrEqual(field string, value interface{}) bson.M {
 // Condition defines a set of requirements an environment should meet for a particular action to be performed on that environment
 type Condition struct {
 	Name            string          `json:"name" bson:"name"`
+	IsEnabled       bool            `json:"enabled,omitempty" bson:"enabled,omitempty"`
 	CreatedBy       string          `json:"createdby,omitempty" bson:"createdby,omitempty"`
 	EnvironmentType EnvironmentType `json:"type" bson:"type"`
 	Phrase          string          `json:"phrase,omitempty" bson:"phrase,omitempty"`

@@ -291,6 +291,44 @@ var addreact = &command{
 	},
 }
 
+var delreact = &command{
+	usage:       `delreact`,
+	short:       ``,
+	long:        ``,
+	isProtected: true,
+	run: func(b *Bot, env *Environment, args []string) error {
+		if len(args) < 2 {
+			return errors.New("Not enough arguments")
+		}
+		if env.Guild == nil {
+			return errors.New("No guild") // ErrNoGuild?
+		}
+
+		emoji := args[0]
+
+		phrase := strings.ToLower(strings.Join(args[1:], " "))
+		if len(phrase) < 1 {
+			return errors.New("Bad phrase")
+		}
+
+		cond := &Condition{
+			Name:            fmt.Sprintf("react %s on (%s)", emoji, phrase),
+			EnvironmentType: message,
+			GuildID:         env.Guild.ID,
+			Phrase:          phrase,
+			Action: NewActionEnvelope(&ReactAction{
+				Emoji: emoji,
+			}),
+		}
+
+		err := b.driver.ConditionDelete(cond)
+		if err != nil {
+			return err
+		}
+		return nil
+	},
+}
+
 var addwrite = &command{
 	usage: `addwrite`,
 	short: ``,
