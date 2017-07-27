@@ -288,8 +288,8 @@ func (b *Bot) registerGuild(g *discordgo.Guild) {
 	if len(channels) > 0 {
 		delete := func(ch Channel) {
 			log.Printf("Deleting channel %s", ch.Name)
-			b.session.ChannelDelete(ch.ID)
-			b.driver.ChannelDelete(ch.ID)
+			_, _ = b.session.ChannelDelete(ch.ID)
+			_ = b.driver.ChannelDelete(ch.ID)
 		}
 		isEmpty := func(ch Channel) bool {
 			for _, v := range g.VoiceStates {

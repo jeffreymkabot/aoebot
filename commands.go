@@ -158,7 +158,7 @@ var addchannel = &command{
 	long: `Create an ad hoc voice channel in this guild.
 	Use the "openmic" flag to override the channel's "Use Voice Activity" permission.
 	Use the "users" flag to limit the number of users that can join the channel.
-	Voice channels are automatically deleted when they are vacant or when I shut down.
+	I will automatically delete voice channels when I see they are vacant.
 	I will only create so many voice channels for each guild.`,
 	run: func(b *Bot, env *Environment, args []string) error {
 		f := flag.NewFlagSet("addchannel", flag.ContinueOnError)
@@ -230,13 +230,13 @@ var addchannel = &command{
 
 func channelManager(ch Channel, delete func(ch Channel), isEmpty func(ch Channel) bool) func(quit <-chan struct{}) {
 	return func(quit <-chan struct{}) {
-		defer delete(ch)
 		for {
 			select {
 			case <-quit:
 				return
 			case <-time.After(60 * time.Second):
 				if isEmpty(ch) {
+					delete(ch)
 					return
 				}
 			}
