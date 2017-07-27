@@ -172,7 +172,7 @@ var addchannel = &command{
 		if env.Guild == nil {
 			return errors.New("No guild")
 		}
-		if len(b.driver.ChannelsGuild(env.Guild.ID)) >= MaxManagedChannels {
+		if len(b.driver.ChannelsGuild(env.Guild.ID)) >= MaxGuildManagedChannels {
 			return errors.New("I'm not allowed to make any more channels in this guild 😦")
 		}
 		chName := fmt.Sprintf("@!%s", env.Author)
@@ -245,9 +245,50 @@ func channelManager(ch Channel, delete func(ch Channel), isEmpty func(ch Channel
 }
 
 var addreact = &command{
-	usage: `addreact [emoji] [phrase]`,
-	short: ``,
-	long:  ``,
+	usage:       `addreact`, // addreact [emoji] [phrase], could support regex with a -r flag
+	short:       ``,
+	long:        ``,
+	isProtected: true,
+	run: func(b *Bot, env *Environment, args []string) error {
+		if len(args) < 2 {
+			return errors.New("Not enough arguments")
+		}
+		if env.Guild == nil {
+			return errors.New("No guild") // ErrNoGuild?
+		}
+		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= MaxGuildCustomConditions {
+			return errors.New("I'm not allowed make any more memes in this guild")
+		}
+
+		emoji := args[0]
+		// immediately try to react to this message with that emoji
+		// to verify that the argument passed to the command is a valid emoji for reactions
+		err := b.React(env.TextChannel.ID, env.TextMessage.ID, emoji)
+		if err != nil {
+			if restErr, ok := err.(discordgo.RESTError); ok && restErr.Message != nil {
+				return errors.New(restErr.Message.Message)
+			}
+			return err
+		}
+		phrase := strings.ToLower(strings.Join(args[1:], " "))
+		if len(phrase) < 1 {
+			return errors.New("Bad phrase")
+		}
+		cond := &Condition{
+			Name:            fmt.Sprintf("react %s on (%s)", emoji, phrase),
+			EnvironmentType: message,
+			GuildID:         env.Guild.ID,
+			Phrase:          phrase,
+			Action: NewActionEnvelope(&ReactAction{
+				Emoji: emoji,
+			}),
+		}
+		err = b.driver.ConditionAdd(cond, env.Author.String())
+		if err != nil {
+			return err
+		}
+		return nil
+	},
 }
 
 var addwrite = &command{
@@ -260,4 +301,13 @@ var addvoice = &command{
 	usage: ``,
 	short: ``,
 	long:  ``,
+}
+
+var source = &command{
+	usage: `source`,
+	short: `Get my source code`,
+	long:  ``,
+	run: func(b *Bot, env *Environment, args []string) error {
+		return b.Write(env.TextChannel.ID, `https://github.com/jeffreymkabot/aoebot/tree/develop`, false)
+	},
 }

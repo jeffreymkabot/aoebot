@@ -19,9 +19,10 @@ var ErrQuit = errors.New("Dispatched a quit action")
 var ErrForceQuit = errors.New("Dispatched a force quit action")
 
 const (
-	// MaxManagedChannels is the maximum number of ad hoc channels per guild that aoebot is allowed to have created at any given time
-	MaxManagedChannels = 3
-
+	MaxGuildCustomConditions = 50
+	// MaxGuildManagedChannels is the maximum number of ad hoc channels per guild that aoebot is allowed to have created at any given time
+	MaxGuildManagedChannels = 3
+	// ManagedChannelTimeout is how frequently the bot will poll a managed channel to see if it shoudl be deleted
 	ManagedChannelTimeout = 60 * time.Second
 )
 
@@ -64,14 +65,16 @@ func New(token string, owner string, driver Driver) (b *Bot, err error) {
 	// b.session.LogLevel = discordgo.LogWarning
 	b.commands = []*command{
 		help,
+		addchannel,
+		addreact,
+		stats,
+		source,
 		testwrite,
 		testreact,
 		testvoice,
-		stats,
 		reconnect,
 		restart,
 		shutdown,
-		addchannel,
 	}
 	return
 }

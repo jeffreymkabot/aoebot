@@ -15,6 +15,8 @@ import (
 // Clients can implement their own driver type to control the behavior of a Bot
 type Driver interface {
 	Actions(*Environment) []Action
+	ConditionsGuild(guildID string) []Condition
+	ConditionAdd(*Condition, string) error
 	Channels() []Channel
 	ChannelsGuild(guildID string) []Channel
 	ChannelAdd(Channel) error
@@ -44,7 +46,7 @@ func (d *DefaultDriver) Channels() []Channel {
 	coll := d.DB("aoebot").C("channels")
 	err := coll.Find(nil).All(&channels)
 	if err != nil {
-		log.Printf("Error in query %v", err)
+		log.Printf("Error in query managed channels %v", err)
 	}
 	return channels
 }
@@ -57,7 +59,7 @@ func (d *DefaultDriver) ChannelsGuild(guildID string) []Channel {
 	}
 	err := coll.Find(query).All(&channels)
 	if err != nil {
-		log.Printf("Error in query %v", err)
+		log.Printf("Error in query guild managed channels %v", err)
 	}
 	return channels
 }
@@ -77,6 +79,33 @@ func (d *DefaultDriver) ChannelDelete(channelID ...string) error {
 	}
 	err := coll.Remove(query)
 	return err
+}
+
+func (d *DefaultDriver) ConditionsGuild(guildID string) []Condition {
+	conditions := []Condition{}
+	coll := d.DB("aoebot").C("conditions")
+	query := bson.M{
+		"guildid": guildID,
+	}
+	err := coll.Find(query).All(&conditions)
+	if err != nil {
+		log.Printf("Error in query guild custom conditions %v", err)
+	}
+	return conditions
+}
+
+func (d *DefaultDriver) ConditionAdd(c *Condition, creator string) error {
+	coll := d.DB("aoebot").C("conditions")
+	info, err := coll.Upsert(coll, bson.M{
+		"$set": bson.M{
+			"createdby": creator,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	log.Printf("Added Condition %#v", info)
+	return nil
 }
 
 // Actions are discovered as subdocments of entries in the "conditions" collection
@@ -152,7 +181,8 @@ func emptyOrEqual(field string, value interface{}) bson.M {
 
 // Condition defines a set of requirements an environment should meet for a particular action to be performed on that environment
 type Condition struct {
-	Name            string          `json:"name"`
+	Name            string          `json:"name" bson:"name"`
+	CreatedBy       string          `json:"createdby,omitempty" bson:"createdby,omitempty"`
 	EnvironmentType EnvironmentType `json:"type" bson:"type"`
 	Phrase          string          `json:"phrase,omitempty" bson:"phrase,omitempty"`
 	RegexPhrase     string          `json:"regex,omitempty" bson:"regex,omitempty"`
