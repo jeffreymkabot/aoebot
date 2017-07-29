@@ -293,7 +293,7 @@ var addreact = &command{
 
 var delreact = &command{
 	usage: `delreact [emoji] [phrase]`,
-	short: `Unassociate an emoji with a phrase.`,
+	short: `Unassociate an emoji with a phrase`,
 	long: `Remove an existing automatic message reaction in this guild.
 	This is the inverse of the addreact command.
 	For example, an assocation created by "addreact 😊 hello" can be removed with "delreact 😊 hello".`,
@@ -330,12 +330,25 @@ var delreact = &command{
 	},
 }
 
-var getreact = &command{
-	usage: `getreact`,
-	short: `coming soon`,
+var getmemes = &command{
+	usage: `getmemes`,
+	short: `Get the memes I have on file for this guild`,
 	long:  ``,
 	run: func(b *Bot, env *Environment, args []string) error {
-		return b.Write(env.TextChannel.ID, `🚧👷✋`, false)
+		if env.Guild == nil {
+			return errors.New("No guild") // ErrNoGuild?
+		}
+		conds := b.driver.ConditionsGuild(env.Guild.ID)
+		buf := &bytes.Buffer{}
+		w := tabwriter.NewWriter(buf, 0, 4, 0, ' ', 0)
+		fmt.Fprintf(w, "```\n")
+		for _, c := range conds {
+			fmt.Fprintf(w, "%s\n", c.GeneratedName())
+		}
+		fmt.Fprintf(w, "```\n")
+		w.Flush()
+		return b.Write(env.TextChannel.ID, buf.String(), false)
+		// return b.Write(env.TextChannel.ID, `🚧👷✋`, false)
 	},
 }
 
