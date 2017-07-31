@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -244,92 +245,6 @@ func channelManager(ch Channel, delete func(ch Channel), isEmpty func(ch Channel
 	}
 }
 
-var addreact = &command{
-	usage: `addreact [emoji] [phrase]`, // could support regex with a -r flag
-	short: `Associate an emoji with a phrase`,
-	long: `Create an automatic message reaction based on the content of a message.
-	Phrase is not case-sensitive and must match the entire message content to trigger the reaction.
-	Associations are managed per guild.`,
-	run: func(b *Bot, env *Environment, args []string) error {
-		if len(args) < 2 {
-			return errors.New("Not enough arguments")
-		}
-		if env.Guild == nil {
-			return errors.New("No guild") // ErrNoGuild?
-		}
-		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= MaxGuildCustomConditions {
-			return errors.New("I'm not allowed make any more memes in this guild")
-		}
-
-		emoji := args[0]
-		// immediately try to react to this message with that emoji
-		// to verify that the argument passed to the command is a valid emoji for reactions
-		err := b.React(env.TextChannel.ID, env.TextMessage.ID, emoji)
-		if err != nil {
-			if restErr, ok := err.(discordgo.RESTError); ok && restErr.Message != nil {
-				return errors.New(restErr.Message.Message)
-			}
-			return err
-		}
-		phrase := strings.ToLower(strings.Join(args[1:], " "))
-		if len(phrase) < 1 {
-			return errors.New("Bad phrase")
-		}
-		cond := &Condition{
-			EnvironmentType: message,
-			GuildID:         env.Guild.ID,
-			Phrase:          phrase,
-			Action: NewActionEnvelope(&ReactAction{
-				Emoji: emoji,
-			}),
-		}
-		err = b.driver.ConditionAdd(cond, env.Author.String())
-		if err != nil {
-			return err
-		}
-		return nil
-	},
-}
-
-var delreact = &command{
-	usage: `delreact [emoji] [phrase]`,
-	short: `Unassociate an emoji with a phrase`,
-	long: `Remove an existing automatic message reaction in this guild.
-	This is the inverse of the addreact command.
-	For example, an assocation created by "addreact 😊 hello" can be removed with "delreact 😊 hello".`,
-	run: func(b *Bot, env *Environment, args []string) error {
-		if len(args) < 2 {
-			return errors.New("Not enough arguments")
-		}
-		if env.Guild == nil {
-			return errors.New("No guild") // ErrNoGuild?
-		}
-
-		emoji := args[0]
-
-		phrase := strings.ToLower(strings.Join(args[1:], " "))
-		if len(phrase) < 1 {
-			return errors.New("Bad phrase")
-		}
-
-		cond := &Condition{
-			EnvironmentType: message,
-			GuildID:         env.Guild.ID,
-			Phrase:          phrase,
-			Action: NewActionEnvelope(&ReactAction{
-				Emoji: emoji,
-			}),
-		}
-
-		err := b.driver.ConditionDelete(cond)
-		if err != nil {
-			return err
-		}
-		_ = b.Write(env.TextChannel.ID, `🗑️`, false)
-		return nil
-	},
-}
-
 var getmemes = &command{
 	usage: `getmemes`,
 	short: `Get the memes I have on file for this guild`,
@@ -352,15 +267,238 @@ var getmemes = &command{
 	},
 }
 
+var reactRegexp = regexp.MustCompile(`^(?:<:(\S+:\S+)>|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
+
+var addreact = &command{
+	usage: `addreact [emoji] on [phrase]`, // could support regex with a -r flag
+	short: `Associate an emoji with a phrase`,
+	long: `Create an automatic message reaction based on the content of a message.
+	Phrase is not case-sensitive and needs to match the entire message content to trigger the reaction.
+	This is the inverse of the delreact command.`,
+	run: func(b *Bot, env *Environment, args []string) error {
+		if env.Guild == nil {
+			return errors.New("No guild") // ErrNoGuild?
+		}
+		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= MaxGuildCustomConditions {
+			return errors.New("I'm not allowed make any more memes in this guild")
+		}
+
+		argString := strings.Join(args, " ")
+		if !reactRegexp.MatchString(argString) {
+			return help.run(b, env, []string{"addreact"})
+		}
+		submatches := reactRegexp.FindStringSubmatch(argString)
+
+		var emoji string
+		if len(submatches[1]) > 0 {
+			emoji = submatches[1]
+		} else {
+			emoji = submatches[2]
+		}
+		if len(emoji) == 0 {
+			return errors.New("Bad emoji")
+		}
+
+		var phrase string
+		if len(submatches[3]) > 0 {
+			phrase = strings.ToLower(submatches[3])
+		} else {
+			phrase = strings.ToLower(submatches[4])
+		}
+		if len(phrase) == 0 {
+			return errors.New("Bad phrase")
+		}
+
+		log.Printf("Trying emoji %v\n", emoji)
+		// immediately try to react to this message with that emoji
+		// to verify that the argument passed to the command is a valid emoji for reactions
+		err := b.React(env.TextChannel.ID, env.TextMessage.ID, emoji)
+		if err != nil {
+			if restErr, ok := err.(discordgo.RESTError); ok && restErr.Message != nil {
+				return errors.New(restErr.Message.Message)
+			}
+			return err
+		}
+
+		cond := &Condition{
+			EnvironmentType: message,
+			GuildID:         env.Guild.ID,
+			Phrase:          phrase,
+			Action: NewActionEnvelope(&ReactAction{
+				Emoji: emoji,
+			}),
+		}
+		err = b.driver.ConditionAdd(cond, env.Author.String())
+		if err != nil {
+			return err
+		}
+		return nil
+	},
+}
+
+var delreact = &command{
+	usage: `delreact [emoji] on [phrase]`,
+	short: `Unassociate an emoji with a phrase`,
+	long: `Remove an existing automatic message reaction.
+	This is the inverse of the addreact command.
+	For example, an assocation created by "addreact 😊 on hello" can be removed with "delreact 😊 on hello".`,
+	run: func(b *Bot, env *Environment, args []string) error {
+		if env.Guild == nil {
+			return errors.New("No guild") // ErrNoGuild?
+		}
+
+		argString := strings.Join(args, " ")
+		if !reactRegexp.MatchString(argString) {
+			return help.run(b, env, []string{"delreact"})
+		}
+		submatches := reactRegexp.FindStringSubmatch(argString)
+
+		emoji := submatches[1]
+		if len(emoji) == 0 {
+			return errors.New("Bad emoji")
+		}
+
+		phrase := strings.ToLower(submatches[2])
+		if len(phrase) == 0 {
+			return errors.New("Bad phrase")
+		}
+
+		cond := &Condition{
+			EnvironmentType: message,
+			GuildID:         env.Guild.ID,
+			Phrase:          phrase,
+			Action: NewActionEnvelope(&ReactAction{
+				Emoji: emoji,
+			}),
+		}
+
+		err := b.driver.ConditionDelete(cond)
+		if err != nil {
+			return err
+		}
+		_ = b.Write(env.TextChannel.ID, `🗑️`, false)
+		return nil
+	},
+}
+
+var writeRegexp = regexp.MustCompile(`^(?:"(\S.*)"|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
+
 var addwrite = &command{
-	usage: `addwrite`,
-	short: ``,
-	long:  ``,
+	usage: `addwrite [response] on [phrase]`,
+	short: `Associate a response with a phrase`,
+	long: `Create an automatic response based on the content of phrase.
+	Phrase is not case-sensitive and needs to match the entire message content to trigger the response.
+	This is the inverse of the delwrite command.`,
+	run: func(b *Bot, env *Environment, args []string) error {
+		if env.Guild == nil {
+			return errors.New("No guild") // ErrNoGuild?
+		}
+		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= MaxGuildCustomConditions {
+			return errors.New("I'm not allowed make any more memes in this guild")
+		}
+
+		argString := strings.Join(args, " ")
+		if !reactRegexp.MatchString(argString) {
+			return help.run(b, env, []string{"addwrite"})
+		}
+		submatches := reactRegexp.FindStringSubmatch(argString)
+
+		var response string
+		if len(submatches[1]) > 0 {
+			response = submatches[1]
+		} else {
+			response = submatches[2]
+		}
+		if len(response) == 0 {
+			return errors.New("Bad response")
+		}
+
+		var phrase string
+		if len(submatches[3]) > 0 {
+			phrase = strings.ToLower(submatches[3])
+		} else {
+			phrase = strings.ToLower(submatches[4])
+		}
+		if len(phrase) == 0 {
+			return errors.New("Bad phrase")
+		}
+
+		cond := &Condition{
+			EnvironmentType: message,
+			GuildID:         env.Guild.ID,
+			Phrase:          phrase,
+			Action: NewActionEnvelope(&WriteAction{
+				Content: response,
+			}),
+		}
+
+		err := b.driver.ConditionAdd(cond, env.Author.String())
+		if err != nil {
+			return err
+		}
+		_ = b.Write(env.TextChannel.ID, `+`, false)
+		return nil
+	},
+}
+
+var delwrite = &command{
+	usage: `delwrite [response] on [phrase]`,
+	short: `Associate a response with a phrase`,
+	long: `Remove an existing automatic response to a phrase.
+	This is the inverse of the addwrite command.
+	For example, an association created by "addwrite who's there? on hello" can be removed with delwrite who's there? on hello".`,
+	run: func(b *Bot, env *Environment, args []string) error {
+		if env.Guild == nil {
+			return errors.New("No guild") // ErrNoGuild?
+		}
+
+		argString := strings.Join(args, " ")
+		if !reactRegexp.MatchString(argString) {
+			return help.run(b, env, []string{"delwrite"})
+		}
+		submatches := reactRegexp.FindStringSubmatch(argString)
+
+		var response string
+		if len(submatches[1]) > 0 {
+			response = submatches[1]
+		} else {
+			response = submatches[2]
+		}
+		if len(response) == 0 {
+			return errors.New("Bad response")
+		}
+
+		var phrase string
+		if len(submatches[3]) > 0 {
+			phrase = strings.ToLower(submatches[3])
+		} else {
+			phrase = strings.ToLower(submatches[4])
+		}
+		if len(phrase) == 0 {
+			return errors.New("Bad phrase")
+		}
+
+		cond := &Condition{
+			EnvironmentType: message,
+			GuildID:         env.Guild.ID,
+			Phrase:          phrase,
+			Action: NewActionEnvelope(&WriteAction{
+				Content: response,
+			}),
+		}
+
+		err := b.driver.ConditionDelete(cond)
+		if err != nil {
+			return err
+		}
+		_ = b.Write(env.TextChannel.ID, `🗑️`, false)
+		return nil
+	},
 }
 
 var addvoice = &command{
-	usage: ``,
-	short: ``,
+	usage: `addvoice on [phrase]`,
+	short: `Associate a sound file with a phrase`,
 	long:  ``,
 }
 

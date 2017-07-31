@@ -66,9 +66,11 @@ func New(token string, owner string, driver Driver) (b *Bot, err error) {
 	b.commands = []*command{
 		help,
 		addchannel,
+		getmemes,
 		addreact,
 		delreact,
-		getmemes,
+		addwrite,
+		delwrite,
 		stats,
 		source,
 		testwrite,
