@@ -213,7 +213,7 @@ type Condition struct {
 }
 
 func (c Condition) GeneratedName() string {
-	return fmt.Sprintf("%s \t%s \ton \t\"%s\")", c.Action.Type, c.Action.Action, c.Phrase)
+	return fmt.Sprintf("%s \t%s \ton \t\"%s\"", c.Action.Type, c.Action.Action, c.Phrase)
 }
 
 // ActionEnvelope encapsulates an Action and its ActionType
