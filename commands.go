@@ -453,10 +453,10 @@ var delwrite = &command{
 		}
 
 		argString := strings.Join(args, " ")
-		if !reactRegexp.MatchString(argString) {
+		if !writeRegexp.MatchString(argString) {
 			return help.run(b, env, []string{"delwrite"})
 		}
-		submatches := reactRegexp.FindStringSubmatch(argString)
+		submatches := writeRegexp.FindStringSubmatch(argString)
 
 		var response string
 		if len(submatches[1]) > 0 {
