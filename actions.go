@@ -64,7 +64,7 @@ func (ra ReactAction) kind() ActionType {
 }
 
 func (ra ReactAction) String() string {
-	return fmt.Sprintf("%x", ra.Emoji)
+	return fmt.Sprintf("%s", ra.Emoji)
 }
 
 // SayAction specifies content that can be said to a voice channel
