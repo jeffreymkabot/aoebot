@@ -504,10 +504,12 @@ var delwrite = &command{
 var addvoiceRegexp = regexp.MustCompile(`^on (?:"(\S.*)"|(\S.*))$`)
 
 var addvoice = &command{
-	usage:       `addvoice on [phrase]`,
-	short:       `Associate a sound file with a phrase`,
-	long:        `This is the inverse of delvoice.`,
-	isProtected: true,
+	usage: `addvoice on [phrase]`,
+	short: `Associate a sound clip with a phrase`,
+	long: `Upload an audio file that can be played in response to a phrase.
+	I will only take the first couple of seconds from the audio file.
+	Phrase is not case-sensitive and needs to match the entire message content to trigger the response.
+	This is the inverse of delvoice.`,
 	run: func(b *Bot, env *Environment, args []string) error {
 		if env.Guild == nil {
 			return errors.New("No guild") // ErrNoGuild?
@@ -606,10 +608,15 @@ func dcaFromURL(url string, fname string) (f *os.File, err error) {
 var delvoiceRegexp = regexp.MustCompile(`^(?:"(\S.*)"|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
 
 var delvoice = &command{
-	usage:       `delvoice [filename] on [phrase]`,
-	short:       `Unassociate a sound file with a phrase`,
-	long:        `This is the inverse of addvoice.`,
-	isProtected: true,
+	usage: `delvoice [filename] on [phrase]`,
+	short: `Unassociate a sound file with a phrase`,
+	long: `Remove an existing association between sound clip and a phrase.
+	This is the inverse of addvoice.
+	Files uploaded with addvoice are saved to a relative path and with a new file extension.
+	The relative path and new file extension can be discovered with the getmemes command.
+	For example, suppose an assocation is created by uploading the file "greenhillzone.wav" with the command "addvoice on gotta go fast".
+	The "getmemes" command will show: say ./media/audio/greenhillzone.wav.dca on "gotta go fast".
+	This assocation can be deleted with "delvoice ./media/audio/greenhillzone.wav.dca on gotta go fast".`,
 	run: func(b *Bot, env *Environment, args []string) error {
 		if env.Guild == nil {
 			return errors.New("No guild") // ErrNoGuild

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -281,7 +280,6 @@ func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
 		b.addHandler(b.onGuildCreate())
 		b.addHandler(b.onMessageCreate())
 		b.addHandler(b.onVoiceStateUpdate())
-		// b.addRoutine(b.randomVoiceInOpenMic())
 	}
 }
 
@@ -385,64 +383,6 @@ func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStat
 			actions := b.driver.Actions(env)
 			log.Printf("Found actions %v", actions)
 			b.dispatch(env, actions...)
-		}
-	}
-}
-
-// hardcoded experiment for now
-func (b *Bot) randomVoiceInOpenMic() func(<-chan struct{}) {
-	// Access b Bot through a closure
-	return func(quit <-chan struct{}) {
-		var err error
-		var wait time.Duration
-
-		openmicChannelID := "322881248366428161"
-
-		log.Printf("Begin random voice routine.")
-		defer log.Printf("End random voice routine.")
-		for {
-			select {
-			case <-quit:
-				return
-			default:
-			}
-			// TODO this doesn't work on 32-bit OS
-			wait = randomNormalWait(420, 90)
-			log.Printf("Next random voice in %f seconds", wait.Seconds())
-			select {
-			case <-quit:
-				return
-			case <-time.After(wait):
-
-				// %
-
-				env := &Environment{}
-				env.Type = adhoc
-				env.VoiceChannel, err = b.session.State.Channel(openmicChannelID)
-				if err != nil {
-					log.Printf("Error resolve open mic channel %v", err)
-					continue
-				}
-				env.Guild, err = b.session.State.Guild(env.VoiceChannel.GuildID)
-				if err != nil {
-					log.Printf("Error resolve open mic guild %v", err)
-					continue
-				}
-				if b.IsOwnEnvironment(env) {
-					continue
-				}
-
-				// %
-
-				actions := b.driver.Actions(env)
-				log.Printf("Found actions %v", actions)
-				if len(actions) < 1 {
-					continue
-				}
-				// randomly perform just one of the actions
-				a := actions[rand.Intn(len(actions))]
-				b.dispatch(env, a)
-			}
 		}
 	}
 }

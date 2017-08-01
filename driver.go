@@ -18,7 +18,6 @@ type Driver interface {
 	Actions(*Environment) []Action
 	ConditionsGuild(guildID string) []Condition
 	ConditionAdd(*Condition, string) error
-	ConditionAddSetAction(*Condition, ActionEnvelope, string) error
 	ConditionDelete(*Condition) error
 	Channels() []Channel
 	ChannelsGuild(guildID string) []Channel
@@ -96,26 +95,6 @@ func (d *DefaultDriver) ConditionAdd(c *Condition, creator string) error {
 			"name":      c.GeneratedName(),
 			"createdby": creator,
 			"enabled":   true,
-		},
-	})
-	if err != nil {
-		return err
-	}
-	log.Printf("Added Condition %#v", info)
-	return nil
-}
-
-func (d *DefaultDriver) ConditionAddSetAction(c *Condition, a ActionEnvelope, creator string) error {
-	if len(creator) < 1 {
-		return errors.New("Creator name is too short")
-	}
-	coll := d.DB("aoebot").C("conditions")
-	info, err := coll.Upsert(c, bson.M{
-		"$set": bson.M{
-			"name":      c.GeneratedName(),
-			"createdby": creator,
-			"enabled":   true,
-			"action":    a,
 		},
 	})
 	if err != nil {
