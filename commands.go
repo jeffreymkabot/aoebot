@@ -6,6 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
+	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 	"text/tabwriter"
@@ -57,7 +60,9 @@ var help = &command{
 			fmt.Fprintf(w, "All commands start with \"%s\".\n", b.prefix)
 			fmt.Fprintf(w, "For example, \"%s help\".\n\n", b.prefix)
 			for _, c := range b.commands {
-				fmt.Fprintf(w, "%s    \t%s\n", c.name(), c.short)
+				if !c.isProtected {
+					fmt.Fprintf(w, "%s    \t%s\n", c.name(), c.short)
+				}
 			}
 			fmt.Fprintf(w, "\nTo get more help about a command use help [command].\n")
 			fmt.Fprintf(w, "More coming soon!\n")
@@ -496,10 +501,162 @@ var delwrite = &command{
 	},
 }
 
+var addvoiceRegexp = regexp.MustCompile(`^on (?:"(\S.*)"|(\S.*))$`)
+
 var addvoice = &command{
-	usage: `addvoice on [phrase]`,
-	short: `Associate a sound file with a phrase`,
-	long:  ``,
+	usage:       `addvoice on [phrase]`,
+	short:       `Associate a sound file with a phrase`,
+	long:        `This is the inverse of delvoice.`,
+	isProtected: true,
+	run: func(b *Bot, env *Environment, args []string) error {
+		if env.Guild == nil {
+			return errors.New("No guild") // ErrNoGuild?
+		}
+		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= MaxGuildCustomConditions {
+			return errors.New("I'm not allowed make any more memes in this guild")
+		}
+		if len(env.TextMessage.Attachments) == 0 {
+			return errors.New("No attached file")
+		}
+
+		argString := strings.Join(args, " ")
+		if !addvoiceRegexp.MatchString(argString) {
+			return help.run(b, env, []string{"addvoice"})
+		}
+		submatches := addvoiceRegexp.FindStringSubmatch(argString)
+
+		var phrase string
+		if len(submatches[1]) > 0 {
+			phrase = strings.ToLower(submatches[1])
+		} else {
+			phrase = strings.ToLower(submatches[2])
+		}
+		if len(phrase) == 0 {
+			return errors.New("Bad phrase")
+		}
+
+		url := env.TextMessage.Attachments[0].URL
+		filename := env.TextMessage.Attachments[0].Filename
+		file, err := dcaFromURL(url, filename)
+		if err != nil {
+			return err
+		}
+		cond := &Condition{
+			EnvironmentType: message,
+			GuildID:         env.Guild.ID,
+			Phrase:          phrase,
+			Action: NewActionEnvelope(&SayAction{
+				File: file.Name(),
+			}),
+		}
+
+		err = b.driver.ConditionAdd(cond, env.Author.String())
+		if err != nil {
+			return err
+		}
+		_ = b.Write(env.TextChannel.ID, `+`, false)
+		return nil
+	},
+}
+
+func dcaFromURL(url string, fname string) (f *os.File, err error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	duration := fmt.Sprintf("%d", MaxGuildVoiceActionDuration/time.Second)
+	// -t duration arg before -i reads only duration seconds from the input file
+	ffmpeg := exec.Command("./vendor/ffmpeg", "-t", duration, "-i", "pipe:0", "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1")
+	ffmpeg.Stdin = resp.Body
+	// ffmpeg.Stederr = os.Stderr
+	ffmpegout, err := ffmpeg.StdoutPipe()
+	if err != nil {
+		return
+	}
+
+	dca := exec.Command("./vendor/dca-rs", "--raw", "-i", "pipe:0")
+	dca.Stdin = ffmpegout
+	// dca.Stdout = os.Stderr
+
+	f, err = os.Create(fmt.Sprintf("./media/audio/%s.dca", fname))
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	dca.Stdout = f
+
+	err = ffmpeg.Start()
+	if err != nil {
+		return
+	}
+	err = dca.Start()
+	if err != nil {
+		return
+	}
+	err = dca.Wait()
+	if err != nil {
+		return
+	}
+	return
+}
+
+var delvoiceRegexp = regexp.MustCompile(`^(?:"(\S.*)"|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
+
+var delvoice = &command{
+	usage:       `delvoice [filename] on [phrase]`,
+	short:       `Unassociate a sound file with a phrase`,
+	long:        `This is the inverse of addvoice.`,
+	isProtected: true,
+	run: func(b *Bot, env *Environment, args []string) error {
+		if env.Guild == nil {
+			return errors.New("No guild") // ErrNoGuild
+		}
+
+		argString := strings.Join(args, " ")
+		if !delvoiceRegexp.MatchString(argString) {
+			return help.run(b, env, []string{"delvoice"})
+		}
+		submatches := delvoiceRegexp.FindStringSubmatch(argString)
+
+		var filename string
+		if len(submatches[1]) > 0 {
+			filename = strings.ToLower(submatches[1])
+		} else {
+			filename = strings.ToLower(submatches[2])
+		}
+		if len(filename) == 0 {
+			return errors.New("Bad filename")
+		}
+
+		var phrase string
+		if len(submatches[3]) > 0 {
+			phrase = strings.ToLower(submatches[3])
+		} else {
+			phrase = strings.ToLower(submatches[4])
+		}
+		if len(phrase) == 0 {
+			return errors.New("Bad phrase")
+		}
+
+		cond := &Condition{
+			EnvironmentType: message,
+			GuildID:         env.Guild.ID,
+			Phrase:          phrase,
+			Action: NewActionEnvelope(&SayAction{
+				File: filename,
+			}),
+		}
+
+		err := b.driver.ConditionDelete(cond)
+		if err != nil {
+			return err
+		}
+		_ = b.Write(env.TextChannel.ID, `🗑️`, false)
+		return nil
+	},
 }
 
 var source = &command{

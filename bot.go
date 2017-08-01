@@ -19,7 +19,8 @@ var ErrQuit = errors.New("Dispatched a quit action")
 var ErrForceQuit = errors.New("Dispatched a force quit action")
 
 const (
-	MaxGuildCustomConditions = 50
+	MaxGuildVoiceActionDuration = 3 * time.Second
+	MaxGuildCustomConditions    = 50
 	// MaxGuildManagedChannels is the maximum number of ad hoc channels per guild that aoebot is allowed to have created at any given time
 	MaxGuildManagedChannels = 3
 	// ManagedChannelTimeout is how frequently the bot will poll a managed channel to see if it shoudl be deleted
@@ -71,6 +72,8 @@ func New(token string, owner string, driver Driver) (b *Bot, err error) {
 		delreact,
 		addwrite,
 		delwrite,
+		addvoice,
+		delvoice,
 		stats,
 		source,
 		testwrite,
