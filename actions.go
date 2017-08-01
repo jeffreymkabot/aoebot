@@ -21,7 +21,7 @@ type ActionType string
 const (
 	null  ActionType = "null"
 	write ActionType = "write"
-	say   ActionType = "say"
+	voice ActionType = "say"
 	react ActionType = "react"
 )
 
@@ -67,16 +67,16 @@ func (ra ReactAction) String() string {
 	return fmt.Sprintf("%s", ra.Emoji)
 }
 
-// SayAction specifies content that can be said to a voice channel
-type SayAction struct {
+// VoiceAction specifies audio that can be said to a voice channel
+type VoiceAction struct {
 	File   string
 	buffer [][]byte
 }
 
-func (sa SayAction) performFunc(env *Environment) func(*Bot) error {
+func (va VoiceAction) performFunc(env *Environment) func(*Bot) error {
 	return func(b *Bot) error {
 		// TODO cache result of sa.load
-		buf, err := sa.load()
+		buf, err := va.load()
 		if err != nil {
 			return err
 		}
@@ -87,9 +87,9 @@ func (sa SayAction) performFunc(env *Environment) func(*Bot) error {
 	}
 }
 
-func (sa SayAction) load() (buf [][]byte, err error) {
+func (va VoiceAction) load() (buf [][]byte, err error) {
 	buf = make([][]byte, 0)
-	file, err := os.Open(sa.File)
+	file, err := os.Open(va.File)
 	if err != nil {
 		return
 	}
@@ -117,10 +117,10 @@ func (sa SayAction) load() (buf [][]byte, err error) {
 	}
 }
 
-func (sa SayAction) kind() ActionType {
-	return say
+func (va VoiceAction) kind() ActionType {
+	return voice
 }
 
-func (sa SayAction) String() string {
-	return fmt.Sprintf("%v", sa.File)
+func (va VoiceAction) String() string {
+	return fmt.Sprintf("%v", va.File)
 }

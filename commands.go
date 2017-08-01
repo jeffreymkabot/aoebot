@@ -98,7 +98,7 @@ var testvoice = &command{
 	usage: `testvoice`,
 	short: `Test that voice actions can be dispatched`,
 	run: func(b *Bot, env *Environment, args []string) error {
-		return (&SayAction{
+		return (&VoiceAction{
 			File: `media/audio/40 enemy.dca`,
 		}).performFunc(env)(b)
 	},
@@ -545,7 +545,7 @@ var addvoice = &command{
 			EnvironmentType: message,
 			GuildID:         env.Guild.ID,
 			Phrase:          phrase,
-			Action: NewActionEnvelope(&SayAction{
+			Action: NewActionEnvelope(&VoiceAction{
 				File: file.Name(),
 			}),
 		}
@@ -645,7 +645,7 @@ var delvoice = &command{
 			EnvironmentType: message,
 			GuildID:         env.Guild.ID,
 			Phrase:          phrase,
-			Action: NewActionEnvelope(&SayAction{
+			Action: NewActionEnvelope(&VoiceAction{
 				File: filename,
 			}),
 		}

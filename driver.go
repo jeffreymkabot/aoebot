@@ -256,7 +256,7 @@ func NewActionEnvelope(a Action) ActionEnvelope {
 // Calling a function retrieved from ActionTypeMap returns a pointer to a concrete instance of that Type
 var ActionTypeMap = map[ActionType]func() Action{
 	write: func() Action { return &WriteAction{} },
-	say:   func() Action { return &SayAction{} },
+	voice: func() Action { return &VoiceAction{} },
 	react: func() Action { return &ReactAction{} },
 }
 
