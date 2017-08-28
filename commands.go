@@ -582,7 +582,7 @@ func dcaFromURL(url string, fname string) (f *os.File, err error) {
 
 	duration := fmt.Sprintf("%d", MaxGuildVoiceActionDuration/time.Second)
 	// -t duration arg before -i reads only duration seconds from the input file
-	ffmpeg := exec.Command("./vendor/ffmpeg", "-t", duration, "-i", "pipe:0", "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1")
+	ffmpeg := exec.Command("ffmpeg", "-t", duration, "-i", "pipe:0", "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1")
 	ffmpeg.Stdin = resp.Body
 	// ffmpeg.Stederr = os.Stderr
 	ffmpegout, err := ffmpeg.StdoutPipe()
