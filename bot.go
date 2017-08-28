@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -17,23 +18,26 @@ var ErrQuit = errors.New("Dispatched a quit action")
 // ErrForceQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit immediately
 var ErrForceQuit = errors.New("Dispatched a force quit action")
 
-const (
-	MaxGuildVoiceActionDuration = 3 * time.Second
-	MaxGuildCustomConditions    = 50
-	// MaxGuildManagedChannels is the maximum number of ad hoc channels per guild that aoebot is allowed to have created at any given time
-	MaxGuildManagedChannels = 3
-	// ManagedChannelTimeout is how frequently the bot will poll a managed channel to see if it shoudl be deleted
-	ManagedChannelTimeout = 60 * time.Second
-)
+type config struct {
+	Token                      string
+	Owner                      string
+	Mongo                      string
+	Prefix                     string
+	MaxManagedConditions       int `toml:"max_managed_conditions"`
+	MaxManagedVoiceDuration    int `toml:"max_managed_voice_duration"`
+	MaxManagedChannels         int `toml:"max_managed_channels"`
+	ManagedChannelPollInterval int `toml:"managed_channel_poll_interval"`
+	Voice                      voiceConfig
+}
 
 // Bot represents a discord bot
 type Bot struct {
 	mu         sync.Mutex // TODO synchronize state and use of maps
 	kill       chan struct{}
 	killer     error
+	config     config
 	token      string
 	owner      string
-	prefix     string
 	commands   []*command
 	driver     Driver
 	session    *discordgo.Session
@@ -51,7 +55,6 @@ func New(token string, owner string, driver Driver) (b *Bot, err error) {
 		kill:       make(chan struct{}),
 		token:      token,
 		owner:      owner,
-		prefix:     `@!`,
 		driver:     driver,
 		routines:   make(map[*botroutine]struct{}),
 		unhandlers: make(map[*func()]struct{}),
@@ -126,9 +129,11 @@ func (b *Bot) Start() (err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	_, err = toml.DecodeFile("config.toml", &b.config)
 	if err != nil {
 		return
 	}
+	log.Printf("cfg %#v", b.config)
 
 	b.self, err = b.session.User("@me")
 	if err != nil {
@@ -304,8 +309,9 @@ func (b *Bot) registerGuild(g *discordgo.Guild) {
 			}
 			return true
 		}
+		interval := time.Duration(b.config.ManagedChannelPollInterval) * time.Second
 		for _, ch := range channels {
-			b.addRoutine(channelManager(ch, delete, isEmpty))
+			b.addRoutine(channelManager(ch, delete, isEmpty, interval))
 		}
 	}
 }
@@ -339,8 +345,8 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 			return
 		}
 
-		if strings.HasPrefix(env.TextMessage.Content, b.prefix) {
-			args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(env.TextMessage.Content, b.prefix)))
+		if strings.HasPrefix(env.TextMessage.Content, b.config.Prefix) {
+			args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(env.TextMessage.Content, b.config.Prefix)))
 			cmd, args := b.command(args)
 			log.Printf("Exec cmd %v by %s with %v", cmd.name(), env.Author, args)
 			b.exec(env, cmd, args)

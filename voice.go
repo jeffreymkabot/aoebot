@@ -7,14 +7,11 @@ import (
 	"time"
 )
 
-const (
-	// MaxVoiceQueue is the maximum number of voice payloads that can wait to be processed for a particular guild
-	MaxVoiceQueue = 20
-	// VoiceSendTimeout is the amount of time to wait on the voice send channel before giving up on a voice payload
-	VoiceSendTimeout = 1 * time.Second
-	// AfkTimeout is the amount of time to wait for another voice payload before joining the guild's afk channel
-	AfkTimeout = 300 * time.Millisecond
-)
+type voiceConfig struct {
+	QueueLength int `toml:"queue_length"`
+	SendTimeout int `toml:"send_timeout"`
+	AfkTimeout  int `toml:"afk_timeout"`
+}
 
 // Voicebox
 // Creating a voicebox with newVoiceBox launches a goroutine that listens to payloads on the voicebox's queue channel
@@ -37,11 +34,11 @@ func (b *Bot) speakTo(g *discordgo.Guild) {
 	if ok {
 		vb.close()
 	}
-	b.voiceboxes[g.ID] = newVoiceBox(b.session, g)
+	b.voiceboxes[g.ID] = newVoiceBox(b.session, g, b.config.Voice)
 }
 
-func newVoiceBox(s *discordgo.Session, g *discordgo.Guild) *voicebox {
-	queue := make(chan *voicePayload, MaxVoiceQueue)
+func newVoiceBox(s *discordgo.Session, g *discordgo.Guild, cfg voiceConfig) *voicebox {
+	queue := make(chan *voicePayload, cfg.QueueLength)
 	// close quit channel and all attempts to receive it will receive it without blocking
 	// quit channel is hidden from the outside world
 	// accessed only through closure for voicebox.close
@@ -60,14 +57,14 @@ func newVoiceBox(s *discordgo.Session, g *discordgo.Guild) *voicebox {
 		}
 	}
 	wg.Add(1)
-	go payloadSender(s, g, queue, quit, wg)
+	go payloadSender(s, g, queue, quit, cfg.SendTimeout, cfg.AfkTimeout, wg)
 	return &voicebox{
 		queue: queue,
 		close: close,
 	}
 }
 
-func payloadSender(s *discordgo.Session, g *discordgo.Guild, queue <-chan *voicePayload, quit <-chan struct{}, wg *sync.WaitGroup) {
+func payloadSender(s *discordgo.Session, g *discordgo.Guild, queue <-chan *voicePayload, quit <-chan struct{}, sendTimeout int, afkTimeout int, wg *sync.WaitGroup) {
 	defer wg.Done()
 	if queue == nil || quit == nil {
 		return
@@ -151,14 +148,14 @@ PayloadLoop:
 				return
 			case vc.OpusSend <- frame:
 			// TODO this could be a memory leak if we keep making new timers?
-			case <-time.After(VoiceSendTimeout):
+			case <-time.After(time.Duration(sendTimeout) * time.Millisecond):
 				log.Printf("Opus send timeout in guild %v", g.ID)
 				break FrameLoop
 			}
 		}
 		_ = vc.Speaking(false)
 		// TODO this could be a memory leak if we keep making new timers?
-		afkTimer = time.NewTimer(AfkTimeout).C
+		afkTimer = time.NewTimer(time.Duration(afkTimeout) * time.Millisecond).C
 	}
 }
 

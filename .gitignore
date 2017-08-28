@@ -8,6 +8,12 @@
 **/*.bat
 **/*.sh
 
+# Config
+**/*.json
+**/*.yml
+**/*.toml
+!config.example.toml
+
 # Media files not explicitly whitelisted
 /media/*
 !/media/audio

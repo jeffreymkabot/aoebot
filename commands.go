@@ -57,10 +57,10 @@ var help = &command{
 			}
 		}
 		if !foundArg {
-			fmt.Fprintf(w, "All commands start with \"%s\".\n", b.prefix)
-			fmt.Fprintf(w, "For example, \"%s help\".\n", b.prefix)
+			fmt.Fprintf(w, "All commands start with \"%s\".\n", b.config.Prefix)
+			fmt.Fprintf(w, "For example, \"%s help\".\n", b.config.Prefix)
 			fmt.Fprintf(w, "To get more help about a command use: help [command].\n")
-			fmt.Fprintf(w, "For example, \"%s help addchannel\".\n", b.prefix)
+			fmt.Fprintf(w, "For example, \"%s help addchannel\".\n", b.config.Prefix)
 			fmt.Fprintf(w, "\n")
 			for _, c := range b.commands {
 				if !c.isProtected {
@@ -180,7 +180,7 @@ var addchannel = &command{
 		if env.Guild == nil {
 			return errors.New("No guild")
 		}
-		if len(b.driver.ChannelsGuild(env.Guild.ID)) >= MaxGuildManagedChannels {
+		if len(b.driver.ChannelsGuild(env.Guild.ID)) >= b.config.MaxManagedChannels {
 			return errors.New("I'm not allowed to make any more channels in this guild 😦")
 		}
 		chName := fmt.Sprintf("@!%s", env.Author)
@@ -213,7 +213,8 @@ var addchannel = &command{
 			}
 			return true
 		}
-		b.addRoutine(channelManager(ch, delete, isEmpty))
+		interval := time.Duration(b.config.ManagedChannelPollInterval) * time.Second
+		b.addRoutine(channelManager(ch, delete, isEmpty, interval))
 
 		if *isOpen {
 			err = b.session.ChannelPermissionSet(ch.ID, env.Guild.ID, `role`, discordgo.PermissionVoiceUseVAD, 0)
@@ -236,7 +237,7 @@ var addchannel = &command{
 	},
 }
 
-func channelManager(ch Channel, delete func(ch Channel), isEmpty func(ch Channel) bool) func(quit <-chan struct{}) {
+func channelManager(ch Channel, delete func(ch Channel), isEmpty func(ch Channel) bool, pollInterval time.Duration) func(quit <-chan struct{}) {
 	return func(quit <-chan struct{}) {
 		for {
 			select {
@@ -286,7 +287,7 @@ var addreact = &command{
 		if env.Guild == nil {
 			return errors.New("No guild") // ErrNoGuild?
 		}
-		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= MaxGuildCustomConditions {
+		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= b.config.MaxManagedConditions {
 			return errors.New("I'm not allowed make any more memes in this guild")
 		}
 
@@ -410,7 +411,7 @@ var addwrite = &command{
 		if env.Guild == nil {
 			return errors.New("No guild") // ErrNoGuild?
 		}
-		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= MaxGuildCustomConditions {
+		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= b.config.MaxManagedConditions {
 			return errors.New("I'm not allowed make any more memes in this guild")
 		}
 
@@ -526,7 +527,7 @@ var addvoice = &command{
 		if env.Guild == nil {
 			return errors.New("No guild") // ErrNoGuild?
 		}
-		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= MaxGuildCustomConditions {
+		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= b.config.MaxManagedConditions {
 			return errors.New("I'm not allowed make any more memes in this guild")
 		}
 		if len(env.TextMessage.Attachments) == 0 {
@@ -551,7 +552,7 @@ var addvoice = &command{
 
 		url := env.TextMessage.Attachments[0].URL
 		filename := env.TextMessage.Attachments[0].Filename
-		file, err := dcaFromURL(url, filename)
+		file, err := dcaFromURL(url, filename, b.config.MaxManagedVoiceDuration)
 		if err != nil {
 			return err
 		}
@@ -573,16 +574,15 @@ var addvoice = &command{
 	},
 }
 
-func dcaFromURL(url string, fname string) (f *os.File, err error) {
+func dcaFromURL(url string, fname string, duration int) (f *os.File, err error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
 
-	duration := fmt.Sprintf("%d", MaxGuildVoiceActionDuration/time.Second)
 	// -t duration arg before -i reads only duration seconds from the input file
-	ffmpeg := exec.Command("ffmpeg", "-t", duration, "-i", "pipe:0", "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1")
+	ffmpeg := exec.Command("ffmpeg", "-t", string(duration), "-i", "pipe:0", "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1")
 	ffmpeg.Stdin = resp.Body
 	// ffmpeg.Stederr = os.Stderr
 	ffmpegout, err := ffmpeg.StdoutPipe()
