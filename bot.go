@@ -335,7 +335,7 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 			return
 		}
 		log.Printf("Saw a new message (%v) by %s in channel %v in guild %v", env.TextMessage.Content, env.Author, env.TextChannel.Name, env.Guild.Name)
-		if b.IsOwnEnvironment(env) {
+		if env.Author.Bot || b.IsOwnEnvironment(env) {
 			return
 		}
 
