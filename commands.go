@@ -58,14 +58,16 @@ var help = &command{
 		}
 		if !foundArg {
 			fmt.Fprintf(w, "All commands start with \"%s\".\n", b.prefix)
-			fmt.Fprintf(w, "For example, \"%s help\".\n\n", b.prefix)
+			fmt.Fprintf(w, "For example, \"%s help\".\n", b.prefix)
+			fmt.Fprintf(w, "To get more help about a command use: help [command].\n")
+			fmt.Fprintf(w, "For example, \"%s help addchannel\".\n", b.prefix)
+			fmt.Fprintf(w, "\n")
 			for _, c := range b.commands {
 				if !c.isProtected {
 					fmt.Fprintf(w, "%s    \t%s\n", c.name(), c.short)
 				}
 			}
-			fmt.Fprintf(w, "\nTo get more help about a command use help [command].\n")
-			fmt.Fprintf(w, "More coming soon!\n")
+			fmt.Fprintf(w, "\n")
 		}
 		fmt.Fprintf(w, "```\n")
 		w.Flush()
@@ -358,12 +360,22 @@ var delreact = &command{
 		}
 		submatches := reactRegexp.FindStringSubmatch(argString)
 
-		emoji := submatches[1]
+		var emoji string
+		if len(submatches[1]) > 0 {
+			emoji = submatches[1]
+		} else {
+			emoji = submatches[2]
+		}
 		if len(emoji) == 0 {
 			return errors.New("Bad emoji")
 		}
 
-		phrase := strings.ToLower(submatches[2])
+		var phrase string
+		if len(submatches[3]) > 0 {
+			phrase = strings.ToLower(submatches[3])
+		} else {
+			phrase = strings.ToLower(submatches[4])
+		}
 		if len(phrase) == 0 {
 			return errors.New("Bad phrase")
 		}
@@ -448,7 +460,7 @@ var addwrite = &command{
 
 var delwrite = &command{
 	usage: `delwrite [response] on [phrase]`,
-	short: `Associate a response with a phrase`,
+	short: `Unassociate a response with a phrase`,
 	long: `Remove an existing automatic response to a phrase.
 	This is the inverse of the addwrite command.
 	For example, an association created by "addwrite who's there? on hello" can be removed with delwrite who's there? on hello".`,
