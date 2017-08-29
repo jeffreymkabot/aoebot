@@ -185,7 +185,7 @@ var addchannel = &command{
 		}
 		chName := fmt.Sprintf("@!%s", env.Author)
 		if *isOpen {
-			chName = `open` + chName
+			chName = "open" + chName
 		}
 
 		ch, err := b.session.GuildChannelCreate(env.Guild.ID, chName, `voice`)
@@ -275,15 +275,23 @@ var getmemes = &command{
 	},
 }
 
-var reactRegexp = regexp.MustCompile(`^(?:<:(\S+:\S+)>|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
+var reactCmdRegex = regexp.MustCompile(`^(?:<:(\S+:\S+)>|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
 
 var addreact = &command{
-	usage: `addreact [emoji] on [phrase]`, // could support regex with a -r flag
+	usage: `addreact [-regex] [emoji] on [phrase]`,
 	short: `Associate an emoji with a phrase`,
 	long: `Create an automatic message reaction based on the content of a message.
-	Phrase is not case-sensitive and needs to match the entire message content to trigger the reaction.
+	Use the regex flag if "phrase" should be interpretted as a regular expression.
+	Accepted syntax described here: https://github.com/google/re2/wiki/Syntax
+	Otherwise, phrase is not case-sensitive and needs to match the entire message content to trigger the reaction.
 	This is the inverse of the delreact command.`,
 	run: func(b *Bot, env *Environment, args []string) error {
+		f := flag.NewFlagSet("addreact", flag.ContinueOnError)
+		isRegex := f.Bool("regex", false, "parse phrase as a regular expression")
+		err := f.Parse(args)
+		if err != nil {
+			return err
+		}
 		if env.Guild == nil {
 			return errors.New("No guild") // ErrNoGuild?
 		}
@@ -291,11 +299,11 @@ var addreact = &command{
 			return errors.New("I'm not allowed make any more memes in this guild")
 		}
 
-		argString := strings.Join(args, " ")
-		if !reactRegexp.MatchString(argString) {
+		argString := strings.Join(f.Args(), " ")
+		if !reactCmdRegex.MatchString(argString) {
 			return help.run(b, env, []string{"addreact"})
 		}
-		submatches := reactRegexp.FindStringSubmatch(argString)
+		submatches := reactCmdRegex.FindStringSubmatch(argString)
 
 		var emoji string
 		if len(submatches[1]) > 0 {
@@ -309,9 +317,9 @@ var addreact = &command{
 
 		var phrase string
 		if len(submatches[3]) > 0 {
-			phrase = strings.ToLower(submatches[3])
+			phrase = submatches[3]
 		} else {
-			phrase = strings.ToLower(submatches[4])
+			phrase = submatches[4]
 		}
 		if len(phrase) == 0 {
 			return errors.New("Bad phrase")
@@ -320,7 +328,7 @@ var addreact = &command{
 		log.Printf("Trying emoji %v\n", emoji)
 		// immediately try to react to this message with that emoji
 		// to verify that the argument passed to the command is a valid emoji for reactions
-		err := b.React(env.TextChannel.ID, env.TextMessage.ID, emoji)
+		err = b.React(env.TextChannel.ID, env.TextMessage.ID, emoji)
 		if err != nil {
 			if restErr, ok := err.(discordgo.RESTError); ok && restErr.Message != nil {
 				return errors.New(restErr.Message.Message)
@@ -331,10 +339,18 @@ var addreact = &command{
 		cond := &Condition{
 			EnvironmentType: message,
 			GuildID:         env.Guild.ID,
-			Phrase:          phrase,
 			Action: NewActionEnvelope(&ReactAction{
 				Emoji: emoji,
 			}),
+		}
+		if *isRegex {
+			regexPhrase, err := regexp.Compile(phrase)
+			if err != nil {
+				return err
+			}
+			cond.RegexPhrase = regexPhrase.String()
+		} else {
+			cond.Phrase = strings.ToLower(phrase)
 		}
 		err = b.driver.ConditionAdd(cond, env.Author.String())
 		if err != nil {
@@ -345,21 +361,29 @@ var addreact = &command{
 }
 
 var delreact = &command{
-	usage: `delreact [emoji] on [phrase]`,
+	usage: `delreact [-regex] [emoji] on [phrase]`,
 	short: `Unassociate an emoji with a phrase`,
 	long: `Remove an existing automatic message reaction.
+	Use the regex flag if "phrase" should be interpretted as a regular expression.
+	Accepted syntax described here: https://github.com/google/re2/wiki/Syntax
 	This is the inverse of the addreact command.
 	For example, an assocation created by "addreact 😊 on hello" can be removed with "delreact 😊 on hello".`,
 	run: func(b *Bot, env *Environment, args []string) error {
+		f := flag.NewFlagSet("addreact", flag.ContinueOnError)
+		isRegex := f.Bool("regex", false, "parse phrase as a regular expression")
+		err := f.Parse(args)
+		if err != nil {
+			return err
+		}
 		if env.Guild == nil {
 			return errors.New("No guild") // ErrNoGuild?
 		}
 
-		argString := strings.Join(args, " ")
-		if !reactRegexp.MatchString(argString) {
+		argString := strings.Join(f.Args(), " ")
+		if !reactCmdRegex.MatchString(argString) {
 			return help.run(b, env, []string{"delreact"})
 		}
-		submatches := reactRegexp.FindStringSubmatch(argString)
+		submatches := reactCmdRegex.FindStringSubmatch(argString)
 
 		var emoji string
 		if len(submatches[1]) > 0 {
@@ -373,9 +397,9 @@ var delreact = &command{
 
 		var phrase string
 		if len(submatches[3]) > 0 {
-			phrase = strings.ToLower(submatches[3])
+			phrase = submatches[3]
 		} else {
-			phrase = strings.ToLower(submatches[4])
+			phrase = submatches[4]
 		}
 		if len(phrase) == 0 {
 			return errors.New("Bad phrase")
@@ -384,13 +408,21 @@ var delreact = &command{
 		cond := &Condition{
 			EnvironmentType: message,
 			GuildID:         env.Guild.ID,
-			Phrase:          phrase,
 			Action: NewActionEnvelope(&ReactAction{
 				Emoji: emoji,
 			}),
 		}
+		if *isRegex {
+			regexPhrase, err := regexp.Compile(phrase)
+			if err != nil {
+				return err
+			}
+			cond.RegexPhrase = regexPhrase.String()
+		} else {
+			cond.Phrase = strings.ToLower(phrase)
+		}
 
-		err := b.driver.ConditionDelete(cond)
+		err = b.driver.ConditionDelete(cond)
 		if err != nil {
 			return err
 		}
@@ -399,7 +431,7 @@ var delreact = &command{
 	},
 }
 
-var writeRegexp = regexp.MustCompile(`^(?:"(\S.*)"|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
+var writeCmdRegex = regexp.MustCompile(`^(?:"(\S.*)"|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
 
 var addwrite = &command{
 	usage: `addwrite [response] on [phrase]`,
@@ -416,10 +448,10 @@ var addwrite = &command{
 		}
 
 		argString := strings.Join(args, " ")
-		if !writeRegexp.MatchString(argString) {
+		if !writeCmdRegex.MatchString(argString) {
 			return help.run(b, env, []string{"addwrite"})
 		}
-		submatches := writeRegexp.FindStringSubmatch(argString)
+		submatches := writeCmdRegex.FindStringSubmatch(argString)
 
 		var response string
 		if len(submatches[1]) > 0 {
@@ -471,10 +503,10 @@ var delwrite = &command{
 		}
 
 		argString := strings.Join(args, " ")
-		if !writeRegexp.MatchString(argString) {
+		if !writeCmdRegex.MatchString(argString) {
 			return help.run(b, env, []string{"delwrite"})
 		}
-		submatches := writeRegexp.FindStringSubmatch(argString)
+		submatches := writeCmdRegex.FindStringSubmatch(argString)
 
 		var response string
 		if len(submatches[1]) > 0 {
@@ -514,7 +546,7 @@ var delwrite = &command{
 	},
 }
 
-var addvoiceRegexp = regexp.MustCompile(`^on (?:"(\S.*)"|(\S.*))$`)
+var addvoiceCmdRegexp = regexp.MustCompile(`^on (?:"(\S.*)"|(\S.*))$`)
 
 var addvoice = &command{
 	usage: `addvoice on [phrase]`,
@@ -535,10 +567,10 @@ var addvoice = &command{
 		}
 
 		argString := strings.Join(args, " ")
-		if !addvoiceRegexp.MatchString(argString) {
+		if !addvoiceCmdRegexp.MatchString(argString) {
 			return help.run(b, env, []string{"addvoice"})
 		}
-		submatches := addvoiceRegexp.FindStringSubmatch(argString)
+		submatches := addvoiceCmdRegexp.FindStringSubmatch(argString)
 
 		var phrase string
 		if len(submatches[1]) > 0 {
@@ -617,7 +649,7 @@ func dcaFromURL(url string, fname string, duration int) (f *os.File, err error) 
 	return
 }
 
-var delvoiceRegexp = regexp.MustCompile(`^(?:"(\S.*)"|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
+var delvoiceCmdRegexp = regexp.MustCompile(`^(?:"(\S.*)"|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
 
 var delvoice = &command{
 	usage: `delvoice [filename] on [phrase]`,
@@ -635,10 +667,10 @@ var delvoice = &command{
 		}
 
 		argString := strings.Join(args, " ")
-		if !delvoiceRegexp.MatchString(argString) {
+		if !delvoiceCmdRegexp.MatchString(argString) {
 			return help.run(b, env, []string{"delvoice"})
 		}
-		submatches := delvoiceRegexp.FindStringSubmatch(argString)
+		submatches := delvoiceCmdRegexp.FindStringSubmatch(argString)
 
 		var filename string
 		if len(submatches[1]) > 0 {

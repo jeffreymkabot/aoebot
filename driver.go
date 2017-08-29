@@ -213,6 +213,10 @@ type Condition struct {
 }
 
 func (c Condition) GeneratedName() string {
+	isRegex := c.RegexPhrase != ""
+	if isRegex {
+		return fmt.Sprintf("%s \t%s \ton \t\"%s\"", c.Action.Type, c.Action.Action, c.RegexPhrase)
+	}
 	return fmt.Sprintf("%s \t%s \ton \t\"%s\"", c.Action.Type, c.Action.Action, c.Phrase)
 }
 
