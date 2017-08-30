@@ -180,7 +180,7 @@ var addchannel = &command{
 		if env.Guild == nil {
 			return errors.New("No guild")
 		}
-		if len(b.driver.ChannelsGuild(env.Guild.ID)) >= b.config.MaxManagedChannels {
+		if len(b.driver.channelsGuild(env.Guild.ID)) >= b.config.MaxManagedChannels {
 			return errors.New("I'm not allowed to make any more channels in this guild 😦")
 		}
 		chName := fmt.Sprintf("@!%s", env.Author)
@@ -197,9 +197,9 @@ var addchannel = &command{
 		delete := func(ch Channel) {
 			log.Printf("Deleting channel %s", ch.Name)
 			_, _ = b.session.ChannelDelete(ch.ID)
-			_ = b.driver.ChannelDelete(ch.ID)
+			_ = b.driver.channelDelete(ch.ID)
 		}
-		err = b.driver.ChannelAdd(Channel(ch))
+		err = b.driver.channelAdd(Channel(ch))
 		if err != nil {
 			delete(ch)
 			return err
@@ -261,7 +261,7 @@ var getmemes = &command{
 		if env.Guild == nil {
 			return errors.New("No guild") // ErrNoGuild?
 		}
-		conds := b.driver.ConditionsGuild(env.Guild.ID)
+		conds := b.driver.conditionsGuild(env.Guild.ID)
 		buf := &bytes.Buffer{}
 		w := tabwriter.NewWriter(buf, 0, 4, 0, ' ', 0)
 		fmt.Fprintf(w, "```\n")
@@ -295,7 +295,7 @@ var addreact = &command{
 		if env.Guild == nil {
 			return errors.New("No guild") // ErrNoGuild?
 		}
-		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= b.config.MaxManagedConditions {
+		if len(b.driver.conditionsGuild(env.Guild.ID)) >= b.config.MaxManagedConditions {
 			return errors.New("I'm not allowed make any more memes in this guild")
 		}
 
@@ -352,7 +352,7 @@ var addreact = &command{
 		} else {
 			cond.Phrase = strings.ToLower(phrase)
 		}
-		err = b.driver.ConditionAdd(cond, env.Author.String())
+		err = b.driver.conditionAdd(cond, env.Author.String())
 		if err != nil {
 			return err
 		}
@@ -422,7 +422,7 @@ var delreact = &command{
 			cond.Phrase = strings.ToLower(phrase)
 		}
 
-		err = b.driver.ConditionDelete(cond)
+		err = b.driver.conditionDelete(cond)
 		if err != nil {
 			return err
 		}
@@ -443,7 +443,7 @@ var addwrite = &command{
 		if env.Guild == nil {
 			return errors.New("No guild") // ErrNoGuild?
 		}
-		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= b.config.MaxManagedConditions {
+		if len(b.driver.conditionsGuild(env.Guild.ID)) >= b.config.MaxManagedConditions {
 			return errors.New("I'm not allowed make any more memes in this guild")
 		}
 
@@ -482,7 +482,7 @@ var addwrite = &command{
 			}),
 		}
 
-		err := b.driver.ConditionAdd(cond, env.Author.String())
+		err := b.driver.conditionAdd(cond, env.Author.String())
 		if err != nil {
 			return err
 		}
@@ -537,7 +537,7 @@ var delwrite = &command{
 			}),
 		}
 
-		err := b.driver.ConditionDelete(cond)
+		err := b.driver.conditionDelete(cond)
 		if err != nil {
 			return err
 		}
@@ -559,7 +559,7 @@ var addvoice = &command{
 		if env.Guild == nil {
 			return errors.New("No guild") // ErrNoGuild?
 		}
-		if len(b.driver.ConditionsGuild(env.Guild.ID)) >= b.config.MaxManagedConditions {
+		if len(b.driver.conditionsGuild(env.Guild.ID)) >= b.config.MaxManagedConditions {
 			return errors.New("I'm not allowed make any more memes in this guild")
 		}
 		if len(env.TextMessage.Attachments) == 0 {
@@ -597,7 +597,7 @@ var addvoice = &command{
 			}),
 		}
 
-		err = b.driver.ConditionAdd(cond, env.Author.String())
+		err = b.driver.conditionAdd(cond, env.Author.String())
 		if err != nil {
 			return err
 		}
@@ -701,7 +701,7 @@ var delvoice = &command{
 			}),
 		}
 
-		err := b.driver.ConditionDelete(cond)
+		err := b.driver.conditionDelete(cond)
 		if err != nil {
 			return err
 		}

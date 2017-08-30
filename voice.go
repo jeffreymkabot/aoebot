@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-type voiceConfig struct {
+type VoiceConfig struct {
 	QueueLength int `toml:"queue_length"`
 	SendTimeout int `toml:"send_timeout"`
 	AfkTimeout  int `toml:"afk_timeout"`
@@ -37,7 +37,7 @@ func (b *Bot) speakTo(g *discordgo.Guild) {
 	b.voiceboxes[g.ID] = newVoiceBox(b.session, g, b.config.Voice)
 }
 
-func newVoiceBox(s *discordgo.Session, g *discordgo.Guild, cfg voiceConfig) *voicebox {
+func newVoiceBox(s *discordgo.Session, g *discordgo.Guild, cfg VoiceConfig) *voicebox {
 	queue := make(chan *voicePayload, cfg.QueueLength)
 	// close quit channel and all attempts to receive it will receive it without blocking
 	// quit channel is hidden from the outside world

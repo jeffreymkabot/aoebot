@@ -18,7 +18,7 @@ var ErrQuit = errors.New("Dispatched a quit action")
 // ErrForceQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit immediately
 var ErrForceQuit = errors.New("Dispatched a force quit action")
 
-type config struct {
+type Config struct {
 	Token                      string
 	Owner                      string
 	Mongo                      string
@@ -27,7 +27,19 @@ type config struct {
 	MaxManagedVoiceDuration    int `toml:"max_managed_voice_duration"`
 	MaxManagedChannels         int `toml:"max_managed_channels"`
 	ManagedChannelPollInterval int `toml:"managed_channel_poll_interval"`
-	Voice                      voiceConfig
+	Voice                      VoiceConfig
+}
+
+var DefaultConfig = Config{
+	MaxManagedConditions:       20,
+	MaxManagedVoiceDuration:    5,
+	MaxManagedChannels:         5,
+	ManagedChannelPollInterval: 60,
+	Voice: VoiceConfig{
+		QueueLength: 100,
+		SendTimeout: 1000,
+		AfkTimeout:  300,
+	},
 }
 
 // Bot represents a discord bot
@@ -35,11 +47,10 @@ type Bot struct {
 	mu         sync.Mutex // TODO synchronize state and use of maps
 	kill       chan struct{}
 	killer     error
-	config     config
-	token      string
+	config     Config
 	owner      string
 	commands   []*command
-	driver     Driver
+	driver     *Driver
 	session    *discordgo.Session
 	self       *discordgo.User
 	routines   map[*botroutine]struct{} // Set
@@ -50,18 +61,21 @@ type Bot struct {
 }
 
 // New initializes a bot
-func New(token string, owner string, driver Driver) (b *Bot, err error) {
+func New(token string, owner string, mongo string) (b *Bot, err error) {
 	b = &Bot{
 		kill:       make(chan struct{}),
-		token:      token,
 		owner:      owner,
-		driver:     driver,
+		config:     DefaultConfig,
 		routines:   make(map[*botroutine]struct{}),
 		unhandlers: make(map[*func()]struct{}),
 		voiceboxes: make(map[string]*voicebox),
 		occupancy:  make(map[string]string),
 	}
-	b.session, err = discordgo.New("Bot " + b.token)
+	b.session, err = discordgo.New("Bot " + token)
+	if err != nil {
+		return
+	}
+	b.driver, err = newDriver(mongo)
 	if err != nil {
 		return
 	}
@@ -88,11 +102,10 @@ func New(token string, owner string, driver Driver) (b *Bot, err error) {
 	return
 }
 
-// SetDriver assigns a new Driver to the Bot
-func (b *Bot) SetDriver(d Driver) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.driver = d
+func NewFromConfig(cfg Config, log *log.Logger) (b *Bot, err error) {
+	b, err = New(cfg.Token, cfg.Owner, cfg.Mongo)
+	b.config = cfg
+	return
 }
 
 // modeled after default package context
@@ -175,6 +188,8 @@ func (b *Bot) Stop() {
 
 	// close the session after closing voice boxes since closing voiceboxes attempts graceful disconnect using discord session
 	b.session.Close()
+
+	b.driver.Close()
 
 	log.Printf("...closed session.")
 }
@@ -294,12 +309,12 @@ func (b *Bot) registerGuild(g *discordgo.Guild) {
 		// TODO bots could be in a channel in multiple guilds
 		b.occupancy[vs.UserID] = vs.ChannelID
 	}
-	channels := b.driver.ChannelsGuild(g.ID)
+	channels := b.driver.channelsGuild(g.ID)
 	if len(channels) > 0 {
 		delete := func(ch Channel) {
 			log.Printf("Deleting channel %s", ch.Name)
 			_, _ = b.session.ChannelDelete(ch.ID)
-			_ = b.driver.ChannelDelete(ch.ID)
+			_ = b.driver.channelDelete(ch.ID)
 		}
 		isEmpty := func(ch Channel) bool {
 			for _, v := range g.VoiceStates {
@@ -351,7 +366,7 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 			log.Printf("Exec cmd %v by %s with %v", cmd.name(), env.Author, args)
 			b.exec(env, cmd, args)
 		} else {
-			actions := b.driver.Actions(env)
+			actions := b.driver.actions(env)
 			log.Printf("Dispatch actions %v", actions)
 			b.dispatch(env, actions...)
 		}
@@ -386,7 +401,7 @@ func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStat
 
 			// %
 
-			actions := b.driver.Actions(env)
+			actions := b.driver.actions(env)
 			log.Printf("Found actions %v", actions)
 			b.dispatch(env, actions...)
 		}

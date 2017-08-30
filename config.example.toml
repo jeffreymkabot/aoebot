@@ -1,3 +1,10 @@
+# discord bot token
+token = ""
+# snowflake of discord user authorized to execute admin commands
+owner = ""
+# mongodb url including user/pass and database
+mongo = ""
+
 prefix = "@!"
 max_managed_conditions = 50
 # number of seconds to read into a source audio file for a new voice action

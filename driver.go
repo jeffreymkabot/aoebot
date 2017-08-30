@@ -12,40 +12,26 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-// Driver is used by a Bot to discover Actions corresponding to an Environment
-// Clients can implement their own driver type to control the behavior of a Bot
-type Driver interface {
-	Actions(*Environment) []Action
-	ConditionsGuild(guildID string) []Condition
-	ConditionAdd(*Condition, string) error
-	ConditionDelete(*Condition) error
-	Channels() []Channel
-	ChannelsGuild(guildID string) []Channel
-	ChannelAdd(Channel) error
-	ChannelDelete(...string) error
-}
-
-// DefaultDriver is the default implementation of the Driver interface
-// DefaultDriver is a wrapper around a MongoDB session
+// Driver is a wrapper around a MongoDB session
 // Actions are discovered as subdocments of entries in the "conditions" collection
 // Conditions are specify properties of Environments that they correspond to
-type DefaultDriver struct {
+type Driver struct {
 	*mgo.Session
 }
 
-// NewDefaultDriver starts a new MongoDB session
-// Clients SHOULD call DefaultDriver.Close() to stop any DefaultDrivers they start
-func NewDefaultDriver(dbURL string) (d *DefaultDriver, err error) {
+// newDriver starts a new MongoDB session
+// Clients SHOULD call Driver.Close() to stop any Drivers they start
+func newDriver(dbURL string) (d *Driver, err error) {
 	session, err := mgo.Dial(dbURL)
-	d = &DefaultDriver{
+	d = &Driver{
 		session,
 	}
 	return
 }
 
-// Actions are discovered as subdocments of entries in the "conditions" collection
+// actions are discovered as subdocments of entries in the "conditions" collection
 // Conditions are specify properties of Environments that they correspond to
-func (d *DefaultDriver) Actions(env *Environment) []Action {
+func (d *Driver) actions(env *Environment) []Action {
 	actions := []Action{}
 	coll := d.DB("aoebot").C("conditions")
 	query := queryEnvironment(env)
@@ -67,7 +53,7 @@ func (d *DefaultDriver) Actions(env *Environment) []Action {
 	return actions
 }
 
-func (d *DefaultDriver) ConditionsGuild(guildID string) []Condition {
+func (d *Driver) conditionsGuild(guildID string) []Condition {
 	conditions := []Condition{}
 	coll := d.DB("aoebot").C("conditions")
 	query := bson.M{
@@ -85,7 +71,7 @@ func (d *DefaultDriver) ConditionsGuild(guildID string) []Condition {
 	return conditions
 }
 
-func (d *DefaultDriver) ConditionAdd(c *Condition, creator string) error {
+func (d *Driver) conditionAdd(c *Condition, creator string) error {
 	if len(creator) < 1 {
 		return errors.New("Creator name is too short")
 	}
@@ -104,13 +90,13 @@ func (d *DefaultDriver) ConditionAdd(c *Condition, creator string) error {
 	return nil
 }
 
-func (d *DefaultDriver) ConditionDelete(c *Condition) error {
+func (d *Driver) conditionDelete(c *Condition) error {
 	coll := d.DB("aoebot").C("conditions")
 	err := coll.Remove(c)
 	return err
 }
 
-func (d *DefaultDriver) Channels() []Channel {
+func (d *Driver) channels() []Channel {
 	channels := []Channel{}
 	coll := d.DB("aoebot").C("channels")
 	err := coll.Find(nil).All(&channels)
@@ -120,7 +106,7 @@ func (d *DefaultDriver) Channels() []Channel {
 	return channels
 }
 
-func (d *DefaultDriver) ChannelsGuild(guildID string) []Channel {
+func (d *Driver) channelsGuild(guildID string) []Channel {
 	channels := []Channel{}
 	coll := d.DB("aoebot").C("channels")
 	query := bson.M{
@@ -133,13 +119,13 @@ func (d *DefaultDriver) ChannelsGuild(guildID string) []Channel {
 	return channels
 }
 
-func (d *DefaultDriver) ChannelAdd(ch Channel) error {
+func (d *Driver) channelAdd(ch Channel) error {
 	coll := d.DB("aoebot").C("channels")
 	err := coll.Insert(ch)
 	return err
 }
 
-func (d *DefaultDriver) ChannelDelete(channelID ...string) error {
+func (d *Driver) channelDelete(channelID ...string) error {
 	coll := d.DB("aoebot").C("channels")
 	query := bson.M{
 		"id": bson.M{
