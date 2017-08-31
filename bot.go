@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -19,9 +18,6 @@ var ErrQuit = errors.New("Dispatched a quit action")
 var ErrForceQuit = errors.New("Dispatched a force quit action")
 
 type Config struct {
-	Token                      string
-	Owner                      string
-	Mongo                      string
 	Prefix                     string
 	MaxManagedConditions       int `toml:"max_managed_conditions"`
 	MaxManagedVoiceDuration    int `toml:"max_managed_voice_duration"`
@@ -48,6 +44,8 @@ type Bot struct {
 	kill       chan struct{}
 	killer     error
 	config     Config
+	log        *log.Logger
+	mongo      string
 	owner      string
 	commands   []*command
 	driver     *Driver
@@ -61,11 +59,13 @@ type Bot struct {
 }
 
 // New initializes a bot
-func New(token string, owner string, mongo string) (b *Bot, err error) {
+func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err error) {
 	b = &Bot{
 		kill:       make(chan struct{}),
-		owner:      owner,
 		config:     DefaultConfig,
+		log:        log,
+		mongo:      mongo,
+		owner:      owner,
 		routines:   make(map[*botroutine]struct{}),
 		unhandlers: make(map[*func()]struct{}),
 		voiceboxes: make(map[string]*voicebox),
@@ -75,11 +75,6 @@ func New(token string, owner string, mongo string) (b *Bot, err error) {
 	if err != nil {
 		return
 	}
-	b.driver, err = newDriver(mongo)
-	if err != nil {
-		return
-	}
-	// b.session.LogLevel = discordgo.LogWarning
 	b.commands = []*command{
 		help,
 		addchannel,
@@ -102,10 +97,11 @@ func New(token string, owner string, mongo string) (b *Bot, err error) {
 	return
 }
 
-func NewFromConfig(cfg Config, log *log.Logger) (b *Bot, err error) {
-	b, err = New(cfg.Token, cfg.Owner, cfg.Mongo)
+// WithConfig writes a new config struct
+func (b *Bot) WithConfig(cfg Config) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.config = cfg
-	return
 }
 
 // modeled after default package context
@@ -142,11 +138,10 @@ func (b *Bot) Start() (err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	_, err = toml.DecodeFile("config.toml", &b.config)
+	b.driver, err = newDriver(b.mongo)
 	if err != nil {
 		return
 	}
-	log.Printf("cfg %#v", b.config)
 
 	b.self, err = b.session.User("@me")
 	if err != nil {
@@ -154,6 +149,7 @@ func (b *Bot) Start() (err error) {
 	}
 
 	b.addHandlerOnce(b.onReady())
+
 	// begin listen to discord websocket for events
 	// invoking session.Open() triggers the discord ready event
 	err = b.session.Open()
@@ -186,7 +182,7 @@ func (b *Bot) Stop() {
 		delete(b.voiceboxes, k)
 	}
 
-	// close the session after closing voice boxes since closing voiceboxes attempts graceful disconnect using discord session
+	// close the session after closing voice boxes since closing voiceboxes attempts graceful voiceconnection disconnect using discord session
 	b.session.Close()
 
 	b.driver.Close()

@@ -2,11 +2,12 @@ package main
 
 import (
 	"flag"
-	"github.com/BurntSushi/toml"
-	"github.com/jeffreymkabot/aoebot"
 	"log"
 	"os"
 	"os/signal"
+
+	"github.com/BurntSushi/toml"
+	"github.com/jeffreymkabot/aoebot"
 )
 
 func main() {
@@ -20,6 +21,7 @@ func main() {
 
 	var err error
 
+	// use stdout unless otherwise indicated by flag
 	logDst := os.Stdout
 	if *logFile != "" {
 		logDst, err = os.OpenFile(*logFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
@@ -30,26 +32,34 @@ func main() {
 
 	log := log.New(logDst, "aoebot: ", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
 
-	var cfg aoebot.Config
+	var cfg struct {
+		Token string
+		Mongo string
+		Owner string
+		Bot   aoebot.Config
+	}
 	_, err = toml.DecodeFile(*cfgFile, &cfg)
 	if err != nil {
 		log.Fatalf("Error opening cfg file: %v", err)
 	}
 
-	bot, err := aoebot.NewFromConfig(cfg, log)
+	bot, err := aoebot.New(cfg.Token, cfg.Mongo, cfg.Owner, log)
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
+	bot.WithConfig(cfg.Bot)
 
 	err = bot.Start()
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
+	// bot.Stop() will not be executed if the program exits with os.Exit()
 	defer bot.Stop()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill)
 
+	// handle SIGKILL and ForceQuit by exiting immediately without executing deferred statements
 	for {
 		select {
 		case sig := <-c:

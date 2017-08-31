@@ -14,7 +14,7 @@ import (
 
 // Driver is a wrapper around a MongoDB session
 // Actions are discovered as subdocments of entries in the "conditions" collection
-// Conditions are specify properties of Environments that they correspond to
+// Conditions specify properties of Environments that they correspond to
 type Driver struct {
 	*mgo.Session
 }
