@@ -42,7 +42,7 @@ func (h *help) Short() string {
 }
 
 func (h *help) Long() string {
-	return h.Short()
+	return h.Short() + "." + "."
 }
 
 func (h *help) IsOwnerOnly() bool {
@@ -50,34 +50,46 @@ func (h *help) IsOwnerOnly() bool {
 }
 
 func (h *help) Run(env *Environment, args []string) error {
-	foundArg := false
-	buf := &bytes.Buffer{}
-	w := tabwriter.NewWriter(buf, 0, 4, 0, ' ', 0)
-	fmt.Fprintf(w, "```\n")
 	if len(args) == 1 {
 		for _, c := range env.Bot.commands {
 			if strings.ToLower(args[0]) == strings.ToLower(c.Name()) {
-				foundArg = true
-				fmt.Fprintf(w, "Usage: \t%s\n\n", c.Usage())
-				if len(c.Long()) > 0 {
-					fmt.Fprintf(w, "%s\n", c.Long())
+				embed := &discordgo.MessageEmbed{}
+				embed.Title = c.Name()
+				embed.Color = 0x00ff80
+				if env.Bot.config.HelpThumbnail != "" {
+					embed.Thumbnail = &discordgo.MessageEmbedThumbnail{
+						URL: env.Bot.config.HelpThumbnail,
+					}
 				}
+				embed.Fields = []*discordgo.MessageEmbedField{
+					&discordgo.MessageEmbedField{
+						Name:  "Usage",
+						Value: c.Usage(),
+					},
+					&discordgo.MessageEmbedField{
+						Name:  "Description",
+						Value: c.Long(),
+					},
+				}
+				_, err := env.Bot.session.ChannelMessageSendEmbed(env.TextChannel.ID, embed)
+				return err
 			}
 		}
 	}
-	if !foundArg {
-		fmt.Fprintf(w, "All commands start with \"%s\".\n", env.Bot.config.Prefix)
-		fmt.Fprintf(w, "For example, \"%s help\".\n", env.Bot.config.Prefix)
-		fmt.Fprintf(w, "To get more help about a command use: help [command].\n")
-		fmt.Fprintf(w, "For example, \"%s help addchannel\".\n", env.Bot.config.Prefix)
-		fmt.Fprintf(w, "\n")
-		for _, c := range env.Bot.commands {
-			if !c.IsOwnerOnly() {
-				fmt.Fprintf(w, "%s    \t%s\n", c.Name(), c.Short())
-			}
+	buf := &bytes.Buffer{}
+	w := tabwriter.NewWriter(buf, 0, 4, 0, ' ', 0)
+	fmt.Fprintf(w, "```\n")
+	fmt.Fprintf(w, "All commands start with \"%s\".\n", env.Bot.config.Prefix)
+	fmt.Fprintf(w, "For example, \"%s help\".\n", env.Bot.config.Prefix)
+	fmt.Fprintf(w, "To get more help about a command use: help [command].\n")
+	fmt.Fprintf(w, "For example, \"%s help addchannel\".\n", env.Bot.config.Prefix)
+	fmt.Fprintf(w, "\n")
+	for _, c := range env.Bot.commands {
+		if !c.IsOwnerOnly() {
+			fmt.Fprintf(w, "%s    \t%s\n", c.Name(), c.Short())
 		}
-		fmt.Fprintf(w, "\n")
 	}
+	fmt.Fprintf(w, "\n")
 	fmt.Fprintf(w, "```\n")
 	w.Flush()
 	return env.Bot.Write(env.TextChannel.ID, buf.String(), false)
@@ -94,7 +106,7 @@ func (tr *testreact) Usage() string {
 }
 
 func (tr *testreact) Short() string {
-	return `Test that write actions can be dispatched`
+	return `Test that react actions can be dispatched`
 }
 
 func (tr *testreact) Long() string {
@@ -183,7 +195,7 @@ func (r *reconnect) Short() string {
 }
 
 func (r *reconnect) Long() string {
-	return r.Short()
+	return r.Short() + "."
 }
 
 func (r *reconnect) IsOwnerOnly() bool {
@@ -214,7 +226,7 @@ func (r *restart) Short() string {
 }
 
 func (r *restart) Long() string {
-	return r.Short()
+	return r.Short() + "."
 }
 
 func (r *restart) IsOwnerOnly() bool {
@@ -242,7 +254,7 @@ func (s *shutdown) Short() string {
 }
 
 func (s *shutdown) Long() string {
-	return s.Short()
+	return s.Short() + "."
 }
 
 func (s *shutdown) IsOwnerOnly() bool {
@@ -281,10 +293,10 @@ func (ac *addchannel) Short() string {
 
 func (ac *addchannel) Long() string {
 	return `Create an ad hoc voice channel in this guild.
-	Use the "openmic" flag to override the channel's "Use Voice Activity" permission.
-	Use the "users" flag to limit the number of users that can join the channel.
-	I will automatically delete voice channels when I see they are vacant.
-	I will only create so many voice channels for each guild.`
+Use the "openmic" flag to override the channel's "Use Voice Activity" permission.
+Use the "users" flag to limit the number of users that can join the channel.
+I will automatically delete voice channels when I see they are vacant.
+I will only create so many voice channels for each guild.`
 }
 
 func (ac *addchannel) IsOwnerOnly() bool {
@@ -390,7 +402,7 @@ func (g *getmemes) Short() string {
 }
 
 func (g *getmemes) Long() string {
-	return g.Short()
+	return g.Short() + "."
 }
 
 func (g *getmemes) IsOwnerOnly() bool {
@@ -431,10 +443,10 @@ func (a *addreact) Short() string {
 
 func (a *addreact) Long() string {
 	return `Create an automatic message reaction based on the content of a message.
-	Use the regex flag if "phrase" should be interpretted as a regular expression.
-	Accepted syntax described here: https://github.com/google/re2/wiki/Syntax
-	Otherwise, phrase is not case-sensitive and needs to match the entire message content to trigger the reaction.
-	This is the inverse of the delreact command.`
+Use the regex flag if "phrase" should be interpretted as a regular expression.
+Accepted syntax described here: https://github.com/google/re2/wiki/Syntax
+Otherwise, phrase is not case-sensitive and needs to match the entire message content to trigger the reaction.
+This is the inverse of the delreact command.`
 }
 
 func (a *addreact) IsOwnerOnly() bool {
@@ -531,10 +543,10 @@ func (a *delreact) Short() string {
 
 func (a *delreact) Long() string {
 	return `Remove an existing automatic message reaction.
-	Use the regex flag if "phrase" should be interpretted as a regular expression.
-	Accepted syntax described here: https://github.com/google/re2/wiki/Syntax
-	This is the inverse of the addreact command.
-	For example, an assocation created by "addreact 😊 on hello" can be removed with "delreact 😊 on hello".`
+Use the regex flag if "phrase" should be interpretted as a regular expression.
+Accepted syntax described here: https://github.com/google/re2/wiki/Syntax
+This is the inverse of the addreact command.
+For example, an assocation created by "addreact 😊 on hello" can be removed with "delreact 😊 on hello".`
 }
 
 func (a *delreact) IsOwnerOnly() bool {
@@ -621,8 +633,8 @@ func (a *addwrite) Short() string {
 
 func (a *addwrite) Long() string {
 	return `Create an automatic response based on the content of phrase.
-	Phrase is not case-sensitive and needs to match the entire message content to trigger the response.
-	This is the inverse of the delwrite command.`
+Phrase is not case-sensitive and needs to match the entire message content to trigger the response.
+This is the inverse of the delwrite command.`
 }
 
 func (a *addwrite) IsOwnerOnly() bool {
@@ -696,8 +708,8 @@ func (d *delwrite) Short() string {
 
 func (d *delwrite) Long() string {
 	return `Remove an existing automatic response to a phrase.
-	This is the inverse of the addwrite command.
-	For example, an association created by "addwrite who's there? on hello" can be removed with delwrite who's there? on hello".`
+This is the inverse of the addwrite command.
+For example, an association created by "addwrite who's there? on hello" can be removed with delwrite who's there? on hello".`
 }
 
 func (d *delwrite) IsOwnerOnly() bool {
@@ -770,9 +782,10 @@ func (a *addvoice) Short() string {
 
 func (a *addvoice) Long() string {
 	return `Upload an audio file that can be played in response to a phrase.
-	I will only take the first couple of seconds from the audio file.
-	Phrase is not case-sensitive and needs to match the entire message content to trigger the response.
-	This is the inverse of delvoice.`
+You need to attach the audio file to the message that invokes this command.
+I will only take the first couple of seconds from the audio file.
+Phrase is not case-sensitive and needs to match the entire message content to trigger the response.
+This is the inverse of delvoice.`
 }
 
 func (a *addvoice) IsOwnerOnly() bool {
@@ -963,7 +976,7 @@ func (s *source) Short() string {
 	return `Get my source code`
 }
 func (s *source) Long() string {
-	return s.Short()
+	return s.Short() + "."
 }
 
 func (s *source) IsOwnerOnly() bool {
@@ -987,7 +1000,7 @@ func (s *stats) Short() string {
 	return `Print runtime information`
 }
 func (s *stats) Long() string {
-	return s.Short()
+	return s.Short() + "."
 }
 
 func (s *stats) IsOwnerOnly() bool {

@@ -19,14 +19,16 @@ var ErrForceQuit = errors.New("Dispatched a force quit action")
 
 type Config struct {
 	Prefix                     string
-	MaxManagedConditions       int `toml:"max_managed_conditions"`
-	MaxManagedVoiceDuration    int `toml:"max_managed_voice_duration"`
-	MaxManagedChannels         int `toml:"max_managed_channels"`
-	ManagedChannelPollInterval int `toml:"managed_channel_poll_interval"`
+	HelpThumbnail              string `toml:"help_thumbnail"`
+	MaxManagedConditions       int    `toml:"max_managed_conditions"`
+	MaxManagedVoiceDuration    int    `toml:"max_managed_voice_duration"`
+	MaxManagedChannels         int    `toml:"max_managed_channels"`
+	ManagedChannelPollInterval int    `toml:"managed_channel_poll_interval"`
 	Voice                      VoiceConfig
 }
 
 var DefaultConfig = Config{
+	Prefix:                     "@!",
 	MaxManagedConditions:       20,
 	MaxManagedVoiceDuration:    5,
 	MaxManagedChannels:         5,
@@ -165,6 +167,7 @@ func (b *Bot) Stop() {
 	defer b.mu.Unlock()
 	log.Printf("Closing session...")
 
+	log.Printf("Disabling event handlers...")
 	for f := range b.unhandlers {
 		if f != nil {
 			(*f)()
@@ -172,19 +175,23 @@ func (b *Bot) Stop() {
 		delete(b.unhandlers, f)
 	}
 
+	log.Printf("Closing botroutines...")
 	for r := range b.routines {
 		r.close()
 		delete(b.routines, r)
 	}
 
+	log.Printf("Closing voiceboxes...")
 	for k, vb := range b.voiceboxes {
 		vb.close()
 		delete(b.voiceboxes, k)
 	}
 
 	// close the session after closing voice boxes since closing voiceboxes attempts graceful voiceconnection disconnect using discord session
+	log.Printf("Closing discord...")
 	b.session.Close()
 
+	log.Printf("Closing mongo...")
 	b.driver.Close()
 
 	log.Printf("...closed session.")

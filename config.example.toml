@@ -13,6 +13,8 @@ max_managed_voice_duration = 4
 max_managed_channels = 5
 # amount of time to wait in seconds before polling a managed channel to see if it should be deleted
 managed_channel_poll_interval = 60
+help_thumbnail = ""
+
 
 [bot.voice]
 # maximum number of voice payloads that can wait to be processed per guild at any time
