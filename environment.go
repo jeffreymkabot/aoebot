@@ -31,7 +31,9 @@ type Environment struct {
 
 // NewEnvironment creates a new environment based on a seed event/trigger
 func NewEnvironment(b *Bot, seed interface{}) (env *Environment, err error) {
-	env = &Environment{}
+	env = &Environment{
+		Bot: b,
+	}
 	switch s := seed.(type) {
 	case *discordgo.Message:
 		env.Type = message
