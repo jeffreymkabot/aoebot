@@ -17,12 +17,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// ErrTooManyArguments indicates that a user attempted to invoke a command with too many arguments
-var ErrTooManyArguments = errors.New("Command was invoked with too many arguments")
-
-// ErrProtectedCommand indicates that a user attempted to invoke a command they do not have permission for
-var ErrProtectedCommand = errors.New("Someone who is not the owner attempted to execute a protected command")
-
 // modeled after golang.org/src/cmd/go/main.Command
 type command struct {
 	usage       string
