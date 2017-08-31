@@ -2,9 +2,10 @@ package aoebot
 
 import (
 	"fmt"
-	"github.com/bwmarrin/discordgo"
 	"regexp"
 	"strings"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 // EnvironmentType indicates the source of a context
@@ -19,6 +20,7 @@ const (
 // Environment captures an environment that can elicit bot actions
 // TODO more generic to support capturing the Environment of more events
 type Environment struct {
+	Bot          *Bot
 	Type         EnvironmentType
 	Guild        *discordgo.Guild
 	TextChannel  *discordgo.Channel
@@ -28,32 +30,32 @@ type Environment struct {
 }
 
 // NewEnvironment creates a new environment based on a seed event/trigger
-func NewEnvironment(session *discordgo.Session, seed interface{}) (env *Environment, err error) {
+func NewEnvironment(b *Bot, seed interface{}) (env *Environment, err error) {
 	env = &Environment{}
 	switch s := seed.(type) {
 	case *discordgo.Message:
 		env.Type = message
 		env.TextMessage = s
 		env.Author = s.Author
-		env.TextChannel, err = session.State.Channel(s.ChannelID)
+		env.TextChannel, err = b.session.State.Channel(s.ChannelID)
 		if err != nil {
 			return
 		}
-		env.Guild, err = session.State.Guild(env.TextChannel.GuildID)
+		env.Guild, err = b.session.State.Guild(env.TextChannel.GuildID)
 		if err != nil {
 			return
 		}
 	case *discordgo.VoiceState:
 		env.Type = voicestate
-		env.Author, err = session.User(s.UserID)
+		env.Author, err = b.session.User(s.UserID)
 		if err != nil {
 			return
 		}
-		env.VoiceChannel, err = session.State.Channel(s.ChannelID)
+		env.VoiceChannel, err = b.session.State.Channel(s.ChannelID)
 		if err != nil {
 			return
 		}
-		env.Guild, err = session.State.Guild(env.VoiceChannel.GuildID)
+		env.Guild, err = b.session.State.Guild(env.VoiceChannel.GuildID)
 		if err != nil {
 			return
 		}
@@ -66,6 +68,7 @@ func NewEnvironment(session *discordgo.Session, seed interface{}) (env *Environm
 
 // Satisfies is true when an environment meets the requirements defined in a Condition
 // Some conditions are more specific than others
+// Satisfies panics if the regexPhrase in c Condition does not compile
 func (env Environment) Satisfies(c Condition) bool {
 	typeMatch := env.Type == c.EnvironmentType
 	guildMatch := c.GuildID == "" || (env.Guild != nil && env.Guild.ID == c.GuildID)

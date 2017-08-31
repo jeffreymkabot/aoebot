@@ -82,7 +82,7 @@ var testwrite = &command{
 		return (&WriteAction{
 			Content: `Hello World`,
 			TTS:     false,
-		}).performFunc(env)(b)
+		}).perform(env)
 	},
 }
 
@@ -92,7 +92,7 @@ var testreact = &command{
 	run: func(b *Bot, env *Environment, args []string) error {
 		return (&ReactAction{
 			Emoji: `🤖`,
-		}).performFunc(env)(b)
+		}).perform(env)
 	},
 }
 
@@ -102,7 +102,7 @@ var testvoice = &command{
 	run: func(b *Bot, env *Environment, args []string) error {
 		return (&VoiceAction{
 			File: `media/audio/40 enemy.dca`,
-		}).performFunc(env)(b)
+		}).perform(env)
 	},
 }
 

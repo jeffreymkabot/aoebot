@@ -133,7 +133,7 @@ func (b *Bot) Killer() error {
 	return b.killer
 }
 
-// Start initiates a and discord session
+// Start initiates a database session and a discord session
 func (b *Bot) Start() (err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -279,7 +279,7 @@ func (b *Bot) addRoutine(f func(<-chan struct{})) {
 	b.routines[r] = struct{}{}
 }
 
-// IsOwnEnvironment is true when an environment references the bot's own actions/behavior
+// IsOwnEnvironment is true when an environment's seed is the result of the bot's own actions/behavior
 // This is useful to prevent the bot from reacting to itself
 func (b *Bot) IsOwnEnvironment(env *Environment) bool {
 	return env.Author != nil && env.Author.ID == b.self.ID
@@ -346,7 +346,7 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 			return
 		}
 
-		env, err := NewEnvironment(s, m.Message)
+		env, err := NewEnvironment(b, m.Message)
 		if err != nil {
 			log.Printf("Error resolving environment of new message: %v", err)
 			return
@@ -385,7 +385,7 @@ func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStat
 				return
 			}
 
-			env, err := NewEnvironment(s, v.VoiceState)
+			env, err := NewEnvironment(b, v.VoiceState)
 			if err != nil {
 				log.Printf("Error resolving voice state context: %v", err)
 				return
@@ -447,7 +447,7 @@ func (b *Bot) dispatch(env *Environment, actions ...Action) {
 				}
 			}()
 			log.Printf("Perform %T on %v: %v", a, env.Type, a)
-			err := (a.performFunc(env))(b)
+			err := a.perform(env)
 			if err != nil {
 				log.Printf("Error in perform %T on %v: %v", a, env.Type, err)
 			}

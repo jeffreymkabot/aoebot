@@ -3,7 +3,6 @@ package aoebot
 import (
 	"encoding/binary"
 	"fmt"
-	// "github.com/bwmarrin/discordgo"
 	// "github.com/fatih/structs"
 	"io"
 	"os"
@@ -11,7 +10,7 @@ import (
 
 // Action can be performed given the environment of its trigger
 type Action interface {
-	performFunc(*Environment) func(*Bot) error
+	perform(*Environment) error
 	kind() ActionType
 }
 
@@ -19,7 +18,6 @@ type Action interface {
 type ActionType string
 
 const (
-	null  ActionType = "null"
 	write ActionType = "write"
 	voice ActionType = "say"
 	react ActionType = "react"
@@ -31,10 +29,8 @@ type WriteAction struct {
 	TTS     bool
 }
 
-func (wa WriteAction) performFunc(env *Environment) func(*Bot) error {
-	return func(b *Bot) error {
-		return b.Write(env.TextChannel.ID, wa.Content, wa.TTS)
-	}
+func (wa WriteAction) perform(env *Environment) error {
+	return env.Bot.Write(env.TextChannel.ID, wa.Content, wa.TTS)
 }
 
 func (wa WriteAction) kind() ActionType {
@@ -53,10 +49,8 @@ type ReactAction struct {
 	Emoji string
 }
 
-func (ra ReactAction) performFunc(env *Environment) func(*Bot) error {
-	return func(b *Bot) error {
-		return b.React(env.TextChannel.ID, env.TextMessage.ID, ra.Emoji)
-	}
+func (ra ReactAction) perform(env *Environment) error {
+	return env.Bot.React(env.TextChannel.ID, env.TextMessage.ID, ra.Emoji)
 }
 
 func (ra ReactAction) kind() ActionType {
@@ -73,18 +67,16 @@ type VoiceAction struct {
 	buffer [][]byte
 }
 
-func (va VoiceAction) performFunc(env *Environment) func(*Bot) error {
-	return func(b *Bot) error {
-		// TODO cache result of sa.load
-		buf, err := va.load()
-		if err != nil {
-			return err
-		}
-		if env.VoiceChannel != nil {
-			return b.Say(env.Guild.ID, env.VoiceChannel.ID, buf)
-		}
-		return b.sayToUserInGuild(env.Guild, env.Author.ID, buf)
+func (va VoiceAction) perform(env *Environment) error {
+	// TODO cache result of sa.load
+	buf, err := va.load()
+	if err != nil {
+		return err
 	}
+	if env.VoiceChannel != nil {
+		return env.Bot.Say(env.Guild.ID, env.VoiceChannel.ID, buf)
+	}
+	return env.Bot.sayToUserInGuild(env.Guild, env.Author.ID, buf)
 }
 
 func (va VoiceAction) load() (buf [][]byte, err error) {
