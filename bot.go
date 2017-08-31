@@ -47,7 +47,7 @@ type Bot struct {
 	log        *log.Logger
 	mongo      string
 	owner      string
-	commands   []*command
+	commands   []Command
 	driver     *Driver
 	session    *discordgo.Session
 	self       *discordgo.User
@@ -75,24 +75,24 @@ func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err
 	if err != nil {
 		return
 	}
-	b.commands = []*command{
-		help,
-		addchannel,
-		getmemes,
-		addreact,
-		delreact,
-		addwrite,
-		delwrite,
-		addvoice,
-		delvoice,
-		stats,
-		source,
-		testwrite,
-		testreact,
-		testvoice,
-		reconnect,
-		restart,
-		shutdown,
+	b.commands = []Command{
+		&help{},
+		&addchannel{},
+		&getmemes{},
+		&addreact{},
+		&delreact{},
+		&addwrite{},
+		&delwrite{},
+		&addvoice{},
+		&delvoice{},
+		&stats{},
+		&source{},
+		&testwrite{},
+		&testreact{},
+		&testvoice{},
+		&reconnect{},
+		&restart{},
+		&shutdown{},
 	}
 	return
 }
@@ -359,7 +359,7 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 		if strings.HasPrefix(env.TextMessage.Content, b.config.Prefix) {
 			args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(env.TextMessage.Content, b.config.Prefix)))
 			cmd, args := b.command(args)
-			log.Printf("Exec cmd %v by %s with %v", cmd.name(), env.Author, args)
+			log.Printf("Exec cmd %v by %s with %v", cmd.Name(), env.Author, args)
 			b.exec(env, cmd, args)
 		} else {
 			actions := b.driver.actions(env)
@@ -404,33 +404,33 @@ func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStat
 	}
 }
 
-func (b *Bot) command(args []string) (*command, []string) {
+func (b *Bot) command(args []string) (Command, []string) {
 	if len(args) > 0 {
 		cmd := strings.ToLower(args[0])
 		args := args[1:]
 		for _, c := range b.commands {
-			if c.name() == cmd {
+			if c.Name() == cmd {
 				return c, args
 			}
 		}
 	}
-	return help, []string{}
+	return &help{}, []string{}
 }
 
-func (b *Bot) exec(env *Environment, cmd *command, args []string) {
-	if cmd.isProtected && env.Author.ID != b.owner {
+func (b *Bot) exec(env *Environment, cmd Command, args []string) {
+	if cmd.IsOwnerOnly() && env.Author.ID != b.owner {
 		_ = b.Write(env.TextChannel.ID, "Sorry, only dad can use that one 🙃", false)
 		return
 	}
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("Recovered from panic in exec %v with %v: %v", cmd.name(), args, err)
+			log.Printf("Recovered from panic in exec %v with %v: %v", cmd.Name(), args, err)
 		}
 	}()
 
-	err := cmd.run(b, env, args)
+	err := cmd.Run(env, args)
 	if err != nil {
-		log.Printf("Error in exec %v with %v: %v", cmd.name(), args, err)
+		log.Printf("Error in exec %v with %v: %v", cmd.Name(), args, err)
 		_ = b.Write(env.TextChannel.ID, fmt.Sprintf("🤔...\n%v", err), false)
 		return
 	}
