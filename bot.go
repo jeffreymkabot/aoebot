@@ -80,25 +80,6 @@ func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err
 	b.commands = []Command{
 		&Help{},
 	}
-	// b.commands = []Command{
-	// 	&help{},
-	// 	&addchannel{},
-	// 	&getmemes{},
-	// 	&addreact{},
-	// 	&delreact{},
-	// 	&addwrite{},
-	// 	&delwrite{},
-	// 	&addvoice{},
-	// 	&delvoice{},
-	// 	&stats{},
-	// 	&source{},
-	// 	&testwrite{},
-	// 	&testreact{},
-	// 	&testvoice{},
-	// 	&reconnect{},
-	// 	&restart{},
-	// 	&shutdown{},
-	// }
 	return
 }
 
