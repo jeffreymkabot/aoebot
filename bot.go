@@ -293,6 +293,7 @@ func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
 		b.addHandler(b.onGuildCreate())
 		b.addHandler(b.onMessageCreate())
 		b.addHandler(b.onVoiceStateUpdate())
+		b.Session.UpdateStatus(0, fmt.Sprintf("%s %s", b.Config.Prefix, (&Help{}).Name()))
 	}
 }
 
