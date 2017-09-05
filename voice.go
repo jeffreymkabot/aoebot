@@ -29,12 +29,12 @@ type voicePayload struct {
 }
 
 // speakTo opens the conversation with a discord guild
-func (b *Bot) speakTo(g *discordgo.Guild) {
+func (b *Bot) SpeakTo(g *discordgo.Guild) {
 	vb, ok := b.voiceboxes[g.ID]
 	if ok {
 		vb.close()
 	}
-	b.voiceboxes[g.ID] = newVoiceBox(b.session, g, b.config.Voice)
+	b.voiceboxes[g.ID] = newVoiceBox(b.Session, g, b.Config.Voice)
 }
 
 func newVoiceBox(s *discordgo.Session, g *discordgo.Guild, cfg VoiceConfig) *voicebox {

@@ -12,9 +12,9 @@ import (
 type EnvironmentType int
 
 const (
-	message EnvironmentType = iota
-	voicestate
-	adhoc
+	Message EnvironmentType = iota
+	Voicestate
+	Adhoc
 )
 
 // Environment captures an environment that can elicit bot actions
@@ -36,28 +36,28 @@ func NewEnvironment(b *Bot, seed interface{}) (env *Environment, err error) {
 	}
 	switch s := seed.(type) {
 	case *discordgo.Message:
-		env.Type = message
+		env.Type = Message
 		env.TextMessage = s
 		env.Author = s.Author
-		env.TextChannel, err = b.session.State.Channel(s.ChannelID)
+		env.TextChannel, err = b.Session.State.Channel(s.ChannelID)
 		if err != nil {
 			return
 		}
-		env.Guild, err = b.session.State.Guild(env.TextChannel.GuildID)
+		env.Guild, err = b.Session.State.Guild(env.TextChannel.GuildID)
 		if err != nil {
 			return
 		}
 	case *discordgo.VoiceState:
-		env.Type = voicestate
-		env.Author, err = b.session.User(s.UserID)
+		env.Type = Voicestate
+		env.Author, err = b.Session.User(s.UserID)
 		if err != nil {
 			return
 		}
-		env.VoiceChannel, err = b.session.State.Channel(s.ChannelID)
+		env.VoiceChannel, err = b.Session.State.Channel(s.ChannelID)
 		if err != nil {
 			return
 		}
-		env.Guild, err = b.session.State.Guild(env.VoiceChannel.GuildID)
+		env.Guild, err = b.Session.State.Guild(env.VoiceChannel.GuildID)
 		if err != nil {
 			return
 		}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/jeffreymkabot/aoebot"
+	"github.com/jeffreymkabot/aoebot/commands"
 )
 
 func main() {
@@ -48,6 +49,18 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	bot.WithConfig(cfg.Bot)
+	bot.AddCommand(&commands.AddChannel{})
+	bot.AddCommand(&commands.AddReact{})
+	bot.AddCommand(&commands.DelReact{})
+	bot.AddCommand(&commands.AddWrite{})
+	bot.AddCommand(&commands.DelWrite{})
+	bot.AddCommand(&commands.AddVoice{})
+	bot.AddCommand(&commands.DelVoice{})
+	bot.AddCommand(&commands.Source{})
+	bot.AddCommand(&commands.Stats{})
+	bot.AddCommand(&commands.TestReact{})
+	bot.AddCommand(&commands.TestWrite{})
+	bot.AddCommand(&commands.TestVoice{})
 
 	err = bot.Start()
 	if err != nil {

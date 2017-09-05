@@ -10,7 +10,7 @@ import (
 
 // Action can be performed given the environment of its trigger
 type Action interface {
-	perform(*Environment) error
+	Perform(*Environment) error
 	kind() ActionType
 }
 
@@ -29,7 +29,7 @@ type WriteAction struct {
 	TTS     bool
 }
 
-func (wa WriteAction) perform(env *Environment) error {
+func (wa WriteAction) Perform(env *Environment) error {
 	return env.Bot.Write(env.TextChannel.ID, wa.Content, wa.TTS)
 }
 
@@ -49,7 +49,7 @@ type ReactAction struct {
 	Emoji string
 }
 
-func (ra ReactAction) perform(env *Environment) error {
+func (ra ReactAction) Perform(env *Environment) error {
 	return env.Bot.React(env.TextChannel.ID, env.TextMessage.ID, ra.Emoji)
 }
 
@@ -67,7 +67,7 @@ type VoiceAction struct {
 	buffer [][]byte
 }
 
-func (va VoiceAction) perform(env *Environment) error {
+func (va VoiceAction) Perform(env *Environment) error {
 	// TODO cache result of sa.load
 	buf, err := va.load()
 	if err != nil {

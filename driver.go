@@ -53,7 +53,7 @@ func (d *Driver) actions(env *Environment) []Action {
 	return actions
 }
 
-func (d *Driver) conditionsGuild(guildID string) []Condition {
+func (d *Driver) ConditionsGuild(guildID string) []Condition {
 	conditions := []Condition{}
 	coll := d.DB("aoebot").C("conditions")
 	query := bson.M{
@@ -71,7 +71,7 @@ func (d *Driver) conditionsGuild(guildID string) []Condition {
 	return conditions
 }
 
-func (d *Driver) conditionAdd(c *Condition, creator string) error {
+func (d *Driver) ConditionAdd(c *Condition, creator string) error {
 	if len(creator) < 1 {
 		return errors.New("Creator name is too short")
 	}
@@ -90,13 +90,13 @@ func (d *Driver) conditionAdd(c *Condition, creator string) error {
 	return nil
 }
 
-func (d *Driver) conditionDelete(c *Condition) error {
+func (d *Driver) ConditionDelete(c *Condition) error {
 	coll := d.DB("aoebot").C("conditions")
 	err := coll.Remove(c)
 	return err
 }
 
-func (d *Driver) channels() []Channel {
+func (d *Driver) Channels() []Channel {
 	channels := []Channel{}
 	coll := d.DB("aoebot").C("channels")
 	err := coll.Find(nil).All(&channels)
@@ -106,7 +106,7 @@ func (d *Driver) channels() []Channel {
 	return channels
 }
 
-func (d *Driver) channelsGuild(guildID string) []Channel {
+func (d *Driver) ChannelsGuild(guildID string) []Channel {
 	channels := []Channel{}
 	coll := d.DB("aoebot").C("channels")
 	query := bson.M{
@@ -119,13 +119,13 @@ func (d *Driver) channelsGuild(guildID string) []Channel {
 	return channels
 }
 
-func (d *Driver) channelAdd(ch Channel) error {
+func (d *Driver) ChannelAdd(ch Channel) error {
 	coll := d.DB("aoebot").C("channels")
 	err := coll.Insert(ch)
 	return err
 }
 
-func (d *Driver) channelDelete(channelID ...string) error {
+func (d *Driver) ChannelDelete(channelID ...string) error {
 	coll := d.DB("aoebot").C("channels")
 	query := bson.M{
 		"id": bson.M{

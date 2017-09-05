@@ -39,7 +39,7 @@ func (b *Bot) Stats() *Stats {
 	s.memory = m.Sys
 	s.goroutines = runtime.NumGoroutine()
 	s.goversion = runtime.Version()
-	s.guilds = len(b.session.State.Guilds)
+	s.guilds = len(b.Session.State.Guilds)
 	s.voices = len(b.voiceboxes)
 	return s
 }

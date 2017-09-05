@@ -45,13 +45,13 @@ type Bot struct {
 	mu         sync.Mutex // TODO synchronize state and use of maps
 	kill       chan struct{}
 	killer     error
-	config     Config
+	Config     Config
 	log        *log.Logger
 	mongo      string
 	owner      string
 	commands   []Command
-	driver     *Driver
-	session    *discordgo.Session
+	Driver     *Driver
+	Session    *discordgo.Session
 	self       *discordgo.User
 	routines   map[*botroutine]struct{} // Set
 	unhandlers map[*func()]struct{}     // Set
@@ -64,7 +64,7 @@ type Bot struct {
 func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err error) {
 	b = &Bot{
 		kill:       make(chan struct{}),
-		config:     DefaultConfig,
+		Config:     DefaultConfig,
 		log:        log,
 		mongo:      mongo,
 		owner:      owner,
@@ -73,29 +73,32 @@ func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err
 		voiceboxes: make(map[string]*voicebox),
 		occupancy:  make(map[string]string),
 	}
-	b.session, err = discordgo.New("Bot " + token)
+	b.Session, err = discordgo.New("Bot " + token)
 	if err != nil {
 		return
 	}
 	b.commands = []Command{
-		&help{},
-		&addchannel{},
-		&getmemes{},
-		&addreact{},
-		&delreact{},
-		&addwrite{},
-		&delwrite{},
-		&addvoice{},
-		&delvoice{},
-		&stats{},
-		&source{},
-		&testwrite{},
-		&testreact{},
-		&testvoice{},
-		&reconnect{},
-		&restart{},
-		&shutdown{},
+		&Help{},
 	}
+	// b.commands = []Command{
+	// 	&help{},
+	// 	&addchannel{},
+	// 	&getmemes{},
+	// 	&addreact{},
+	// 	&delreact{},
+	// 	&addwrite{},
+	// 	&delwrite{},
+	// 	&addvoice{},
+	// 	&delvoice{},
+	// 	&stats{},
+	// 	&source{},
+	// 	&testwrite{},
+	// 	&testreact{},
+	// 	&testvoice{},
+	// 	&reconnect{},
+	// 	&restart{},
+	// 	&shutdown{},
+	// }
 	return
 }
 
@@ -103,11 +106,17 @@ func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err
 func (b *Bot) WithConfig(cfg Config) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.config = cfg
+	b.Config = cfg
+}
+
+func (b *Bot) AddCommand(c Command) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.commands = append(b.commands, c)
 }
 
 // modeled after default package context
-func (b *Bot) die(err error) {
+func (b *Bot) Die(err error) {
 	if err == nil {
 		panic("calls to Bot.die require a non-nil error")
 	}
@@ -140,12 +149,12 @@ func (b *Bot) Start() (err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.driver, err = newDriver(b.mongo)
+	b.Driver, err = newDriver(b.mongo)
 	if err != nil {
 		return
 	}
 
-	b.self, err = b.session.User("@me")
+	b.self, err = b.Session.User("@me")
 	if err != nil {
 		return
 	}
@@ -154,7 +163,7 @@ func (b *Bot) Start() (err error) {
 
 	// begin listen to discord websocket for events
 	// invoking session.Open() triggers the discord ready event
-	err = b.session.Open()
+	err = b.Session.Open()
 	if err != nil {
 		return
 	}
@@ -189,10 +198,10 @@ func (b *Bot) Stop() {
 
 	// close the session after closing voice boxes since closing voiceboxes attempts graceful voiceconnection disconnect using discord session
 	log.Printf("Closing discord...")
-	b.session.Close()
+	b.Session.Close()
 
 	log.Printf("Closing mongo...")
-	b.driver.Close()
+	b.Driver.Close()
 
 	log.Printf("...closed session.")
 }
@@ -200,16 +209,16 @@ func (b *Bot) Stop() {
 // Write a message to a channel in a guild
 func (b *Bot) Write(channelID string, message string, tts bool) (err error) {
 	if tts {
-		_, err = b.session.ChannelMessageSendTTS(channelID, message)
+		_, err = b.Session.ChannelMessageSendTTS(channelID, message)
 	} else {
-		_, err = b.session.ChannelMessageSend(channelID, message)
+		_, err = b.Session.ChannelMessageSend(channelID, message)
 	}
 	return
 }
 
 // React with an emoji to a message in a channel in a guild
 func (b *Bot) React(channelID string, messageID string, emoji string) (err error) {
-	err = b.session.MessageReactionAdd(channelID, messageID, emoji)
+	err = b.Session.MessageReactionAdd(channelID, messageID, emoji)
 	return
 }
 
@@ -251,13 +260,13 @@ func (b *Bot) Listen(guildID string, channelID string, duration time.Duration) (
 
 // Add an event handler to the discord session and retain a reference to the handler remover
 func (b *Bot) addHandler(handler interface{}) {
-	unhandler := b.session.AddHandler(handler)
+	unhandler := b.Session.AddHandler(handler)
 	b.unhandlers[&unhandler] = struct{}{}
 }
 
 // Add a one-time event handler to the discord session and retain a reference to the handler remover
 func (b *Bot) addHandlerOnce(handler interface{}) {
-	unhandler := b.session.AddHandlerOnce(handler)
+	unhandler := b.Session.AddHandlerOnce(handler)
 	b.unhandlers[&unhandler] = struct{}{}
 }
 
@@ -281,7 +290,7 @@ func newRoutine(f func(<-chan struct{})) *botroutine {
 	}
 }
 
-func (b *Bot) addRoutine(f func(<-chan struct{})) {
+func (b *Bot) AddRoutine(f func(<-chan struct{})) {
 	r := newRoutine(f)
 	b.routines[r] = struct{}{}
 }
@@ -306,18 +315,36 @@ func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
 	}
 }
 
+type Channel *discordgo.Channel
+
+func ChannelManager(ch Channel, delete func(ch Channel), isEmpty func(ch Channel) bool, pollInterval time.Duration) func(quit <-chan struct{}) {
+	return func(quit <-chan struct{}) {
+		for {
+			select {
+			case <-quit:
+				return
+			case <-time.After(60 * time.Second):
+				if isEmpty(ch) {
+					delete(ch)
+					return
+				}
+			}
+		}
+	}
+}
+
 func (b *Bot) registerGuild(g *discordgo.Guild) {
-	b.speakTo(g)
+	b.SpeakTo(g)
 	for _, vs := range g.VoiceStates {
 		// TODO bots could be in a channel in multiple guilds
 		b.occupancy[vs.UserID] = vs.ChannelID
 	}
-	channels := b.driver.channelsGuild(g.ID)
+	channels := b.Driver.ChannelsGuild(g.ID)
 	if len(channels) > 0 {
 		delete := func(ch Channel) {
 			log.Printf("Deleting channel %s", ch.Name)
-			_, _ = b.session.ChannelDelete(ch.ID)
-			_ = b.driver.channelDelete(ch.ID)
+			_, _ = b.Session.ChannelDelete(ch.ID)
+			_ = b.Driver.ChannelDelete(ch.ID)
 		}
 		isEmpty := func(ch Channel) bool {
 			for _, v := range g.VoiceStates {
@@ -327,9 +354,9 @@ func (b *Bot) registerGuild(g *discordgo.Guild) {
 			}
 			return true
 		}
-		interval := time.Duration(b.config.ManagedChannelPollInterval) * time.Second
+		interval := time.Duration(b.Config.ManagedChannelPollInterval) * time.Second
 		for _, ch := range channels {
-			b.addRoutine(channelManager(ch, delete, isEmpty, interval))
+			b.AddRoutine(ChannelManager(ch, delete, isEmpty, interval))
 		}
 	}
 }
@@ -363,13 +390,13 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 			return
 		}
 
-		if strings.HasPrefix(env.TextMessage.Content, b.config.Prefix) {
-			args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(env.TextMessage.Content, b.config.Prefix)))
+		if strings.HasPrefix(env.TextMessage.Content, b.Config.Prefix) {
+			args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(env.TextMessage.Content, b.Config.Prefix)))
 			cmd, args := b.command(args)
 			log.Printf("Exec cmd %v by %s with %v", cmd.Name(), env.Author, args)
 			b.exec(env, cmd, args)
 		} else {
-			actions := b.driver.actions(env)
+			actions := b.Driver.actions(env)
 			log.Printf("Dispatch actions %v", actions)
 			b.dispatch(env, actions...)
 		}
@@ -404,7 +431,7 @@ func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStat
 
 			// %
 
-			actions := b.driver.actions(env)
+			actions := b.Driver.actions(env)
 			log.Printf("Found actions %v", actions)
 			b.dispatch(env, actions...)
 		}
@@ -421,7 +448,7 @@ func (b *Bot) command(args []string) (Command, []string) {
 			}
 		}
 	}
-	return &help{}, []string{}
+	return &Help{}, []string{}
 }
 
 func (b *Bot) exec(env *Environment, cmd Command, args []string) {
@@ -454,7 +481,7 @@ func (b *Bot) dispatch(env *Environment, actions ...Action) {
 				}
 			}()
 			log.Printf("Perform %T on %v: %v", a, env.Type, a)
-			err := a.perform(env)
+			err := a.Perform(env)
 			if err != nil {
 				log.Printf("Error in perform %T on %v: %v", a, env.Type, err)
 			}
