@@ -4,11 +4,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/bwmarrin/discordgo"
 	"github.com/jeffreymkabot/aoebot"
-	"log"
 	"strings"
-	"time"
 )
 
 type AddChannel struct{}
@@ -52,55 +49,11 @@ func (ac *AddChannel) Run(env *aoebot.Environment, args []string) error {
 	if len(env.Bot.Driver.ChannelsGuild(env.Guild.ID)) >= env.Bot.Config.MaxManagedChannels {
 		return errors.New("I'm not allowed to make any more channels in this guild 😦")
 	}
+
 	chName := fmt.Sprintf("@!%s", env.Author)
 	if *isOpen {
 		chName = "open" + chName
 	}
 
-	ch, err := env.Bot.Session.GuildChannelCreate(env.Guild.ID, chName, `voice`)
-	if err != nil {
-		return err
-	}
-	log.Printf("Created channel %s", ch.Name)
-
-	delete := func(ch aoebot.Channel) {
-		log.Printf("Deleting channel %s", ch.Name)
-		_, _ = env.Bot.Session.ChannelDelete(ch.ID)
-		_ = env.Bot.Driver.ChannelDelete(ch.ID)
-	}
-	err = env.Bot.Driver.ChannelAdd(aoebot.Channel(ch))
-	if err != nil {
-		delete(ch)
-		return err
-	}
-
-	isEmpty := func(ch aoebot.Channel) bool {
-		for _, v := range env.Guild.VoiceStates {
-			if v.ChannelID == ch.ID {
-				return false
-			}
-		}
-		return true
-	}
-	interval := time.Duration(env.Bot.Config.ManagedChannelPollInterval) * time.Second
-	env.Bot.AddRoutine(aoebot.ChannelManager(ch, delete, isEmpty, interval))
-
-	if *isOpen {
-		err = env.Bot.Session.ChannelPermissionSet(ch.ID, env.Guild.ID, `role`, discordgo.PermissionVoiceUseVAD, 0)
-		if err != nil {
-			delete(ch)
-			return err
-		}
-	}
-	if userLimit != nil {
-		data := struct {
-			UserLimit int `json:"user_limit"`
-		}{*userLimit}
-		_, err = env.Bot.Session.RequestWithBucketID("PATCH", discordgo.EndpointChannel(ch.ID), data, discordgo.EndpointChannel(ch.ID))
-		if err != nil {
-			delete(ch)
-			return err
-		}
-	}
-	return nil
+	return env.Bot.AddManagedVoiceChannel(env.Guild.ID, chName, aoebot.ChannelOpenMic(*isOpen), aoebot.ChannelUsers(*userLimit))
 }

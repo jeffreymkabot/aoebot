@@ -96,8 +96,8 @@ func (d *Driver) ConditionDelete(c *Condition) error {
 	return err
 }
 
-func (d *Driver) Channels() []Channel {
-	channels := []Channel{}
+func (d *Driver) Channels() []channel {
+	channels := []channel{}
 	coll := d.DB("aoebot").C("channels")
 	err := coll.Find(nil).All(&channels)
 	if err != nil {
@@ -106,8 +106,8 @@ func (d *Driver) Channels() []Channel {
 	return channels
 }
 
-func (d *Driver) ChannelsGuild(guildID string) []Channel {
-	channels := []Channel{}
+func (d *Driver) ChannelsGuild(guildID string) []channel {
+	channels := []channel{}
 	coll := d.DB("aoebot").C("channels")
 	query := bson.M{
 		"guildid": guildID,
@@ -119,7 +119,7 @@ func (d *Driver) ChannelsGuild(guildID string) []Channel {
 	return channels
 }
 
-func (d *Driver) ChannelAdd(ch Channel) error {
+func (d *Driver) ChannelAdd(ch channel) error {
 	coll := d.DB("aoebot").C("channels")
 	err := coll.Insert(ch)
 	return err

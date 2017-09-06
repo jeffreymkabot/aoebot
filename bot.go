@@ -297,15 +297,104 @@ func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
 	}
 }
 
-type Channel *discordgo.Channel
+// channel's fields must be exported to be visible to bson.Marshal
+// currently only needs ID and GuildID from *discordgo.Channel, but may be convenient to just take everything
+// channel itself does not need to be exported
+type channel struct {
+	IsOpen bool
+	Users  int
+	*discordgo.Channel
+}
 
-func ChannelManager(ch Channel, delete func(ch Channel), isEmpty func(ch Channel) bool, pollInterval time.Duration) func(quit <-chan struct{}) {
+// ChannelOption is a functional option used as a variadic parameter to AddManagedVoiceChannel
+type ChannelOption func(*channel)
+
+// ChannelOpenMic sets whether the discord channel will override the UserVoiceActivity permission
+func ChannelOpenMic(b bool) ChannelOption {
+	return func(ch *channel) {
+		ch.IsOpen = b
+	}
+}
+
+// ChannelUsers sets whether the discord channel will have a user limit
+// values for n that are less than or equal to 0 or greater than 99 will have no effect
+func ChannelUsers(n int) ChannelOption {
+	return func(ch *channel) {
+		if n > 0 {
+			ch.Users = n
+		}
+	}
+}
+
+// AddManagedVoiceChannel creates a new voice channel in a guild
+// The voice channel will be polled periodically and deleted if it is found to be empty
+func (b *Bot) AddManagedVoiceChannel(guildID string, name string, options ...ChannelOption) (err error) {
+	var ch channel
+	for _, opt := range options {
+		opt(&ch)
+	}
+
+	ch.Channel, err = b.Session.GuildChannelCreate(guildID, name, "voice")
+	if err != nil {
+		return
+	}
+
+	delete := func(ch channel) {
+		log.Printf("Deleting channel %v", ch.Name)
+		b.Session.ChannelDelete(ch.ID)
+		b.Driver.ChannelDelete(ch.ID)
+	}
+	err = b.Driver.ChannelAdd(ch)
+	if err != nil {
+		delete(ch)
+		return
+	}
+
+	isEmpty := func(ch channel) bool {
+		g, err := b.Session.State.Guild(ch.GuildID)
+		if err != nil {
+			for _, v := range g.VoiceStates {
+				if v.ChannelID == ch.ID {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	interval := time.Duration(b.Config.ManagedChannelPollInterval) * time.Second
+
+	b.AddRoutine(channelManager(ch, delete, isEmpty, interval))
+
+	if ch.IsOpen {
+		err = b.Session.ChannelPermissionSet(ch.ID, ch.GuildID, "role", discordgo.PermissionVoiceUseVAD, 0)
+		if err != nil {
+			delete(ch)
+			return
+		}
+	}
+	if ch.Users > 0 {
+		data := struct {
+			UserLimit int `json:"user_limit"`
+		}{ch.Users}
+		_, err = b.Session.RequestWithBucketID("PATCH", discordgo.EndpointChannel(ch.ID), data, discordgo.EndpointChannel(ch.ID))
+		if err != nil {
+			delete(ch)
+			return
+		}
+	}
+	return
+}
+
+// channelManager returns a botroutine that periodically polls a channel and deletes it if its empty
+// isEmpty must return true if the channel is already deleted
+// delete should not panic if the channel is already deleted
+func channelManager(ch channel, delete func(ch channel), isEmpty func(ch channel) bool, pollInterval time.Duration) func(quit <-chan struct{}) {
 	return func(quit <-chan struct{}) {
 		for {
 			select {
 			case <-quit:
 				return
-			case <-time.After(60 * time.Second):
+			case <-time.After(pollInterval):
 				if isEmpty(ch) {
 					delete(ch)
 					return
@@ -316,19 +405,20 @@ func ChannelManager(ch Channel, delete func(ch Channel), isEmpty func(ch Channel
 }
 
 func (b *Bot) registerGuild(g *discordgo.Guild) {
-	b.SpeakTo(g)
+	b.speakTo(g)
 	for _, vs := range g.VoiceStates {
 		// TODO bots could be in a channel in multiple guilds
 		b.occupancy[vs.UserID] = vs.ChannelID
 	}
+	// restore management of any voice channels recovered from db
 	channels := b.Driver.ChannelsGuild(g.ID)
 	if len(channels) > 0 {
-		delete := func(ch Channel) {
-			log.Printf("Deleting channel %s", ch.Name)
-			_, _ = b.Session.ChannelDelete(ch.ID)
-			_ = b.Driver.ChannelDelete(ch.ID)
+		delete := func(ch channel) {
+			log.Printf("Deleting channel %v", ch.Name)
+			b.Session.ChannelDelete(ch.ID)
+			b.Driver.ChannelDelete(ch.ID)
 		}
-		isEmpty := func(ch Channel) bool {
+		isEmpty := func(ch channel) bool {
 			for _, v := range g.VoiceStates {
 				if v.ChannelID == ch.ID {
 					return false
@@ -338,7 +428,7 @@ func (b *Bot) registerGuild(g *discordgo.Guild) {
 		}
 		interval := time.Duration(b.Config.ManagedChannelPollInterval) * time.Second
 		for _, ch := range channels {
-			b.AddRoutine(ChannelManager(ch, delete, isEmpty, interval))
+			b.AddRoutine(channelManager(ch, delete, isEmpty, interval))
 		}
 	}
 }

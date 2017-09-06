@@ -29,7 +29,7 @@ type voicePayload struct {
 }
 
 // speakTo opens the conversation with a discord guild
-func (b *Bot) SpeakTo(g *discordgo.Guild) {
+func (b *Bot) speakTo(g *discordgo.Guild) {
 	vb, ok := b.voiceboxes[g.ID]
 	if ok {
 		vb.close()

@@ -114,7 +114,7 @@ func (r *Reconnect) Run(env *Environment, args []string) error {
 		return errors.New("No guild")
 	}
 	_ = env.Bot.Write(env.TextChannel.ID, `Sure thing 🙂`, false)
-	env.Bot.SpeakTo(env.Guild)
+	env.Bot.speakTo(env.Guild)
 	return nil
 }
 
