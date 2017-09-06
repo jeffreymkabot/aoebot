@@ -2,13 +2,16 @@ package commands
 
 import (
 	"errors"
+	"flag"
 	"fmt"
+	"github.com/jeffreymkabot/aoebot"
+	"github.com/jonas747/dca"
+	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
-	"github.com/jeffreymkabot/aoebot"
+	"time"
 )
 
 var addvoiceCmdRegexp = regexp.MustCompile(`^on (?:"(\S.*)"|(\S.*))$`)
@@ -40,6 +43,14 @@ func (a *AddVoice) IsOwnerOnly() bool {
 }
 
 func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
+	f := flag.NewFlagSet(a.Name(), flag.ContinueOnError)
+	vol := f.Int("vol", dca.StdEncodeOptions.Volume, "volume")
+	filters := f.String("af", dca.StdEncodeOptions.AudioFilter, "ffmpeg filters")
+	err := f.Parse(args)
+	if err != nil {
+		return err
+	}
+
 	if env.Guild == nil {
 		return errors.New("No guild") // ErrNoGuild?
 	}
@@ -50,7 +61,7 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 		return errors.New("No attached file")
 	}
 
-	argString := strings.Join(args, " ")
+	argString := strings.Join(f.Args(), " ")
 	if !addvoiceCmdRegexp.MatchString(argString) {
 		return (&aoebot.Help{}).Run(env, []string{"addvoice"})
 	}
@@ -68,7 +79,8 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 
 	url := env.TextMessage.Attachments[0].URL
 	filename := env.TextMessage.Attachments[0].Filename
-	file, err := dcaFromURL(url, filename, env.Bot.Config.MaxManagedVoiceDuration)
+	duration := time.Duration(env.Bot.Config.MaxManagedVoiceDuration)*time.Second
+	file, err := dcaFromURL(url, filename, duration, withVolume(*vol), withFilters(*filters))
 	if err != nil {
 		return err
 	}
@@ -89,25 +101,49 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 	return nil
 }
 
-func dcaFromURL(url string, fname string, duration int) (f *os.File, err error) {
+type encodeOption func(*dca.EncodeOptions)
+
+func withVolume(vol int) encodeOption {
+	return func(enc *dca.EncodeOptions) {
+		enc.Volume = vol
+	}
+}
+
+func withFilters(filters string) encodeOption {
+	return func(enc *dca.EncodeOptions) {
+		enc.AudioFilter = filters
+	}
+}
+
+func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...encodeOption) (f *os.File, err error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
 
-	// -t duration arg before -i reads only duration seconds from the input file
-	ffmpeg := exec.Command("ffmpeg", "-t", string(duration), "-i", "pipe:0", "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1")
-	ffmpeg.Stdin = resp.Body
-	// ffmpeg.Stederr = os.Stderr
-	ffmpegout, err := ffmpeg.StdoutPipe()
+	var encodeOptions = &dca.EncodeOptions{
+		Volume:           256,
+		Channels:         2,
+		FrameRate:        48000,
+		FrameDuration:    20,
+		Bitrate:          64,
+		RawOutput:        true,
+		Application:      dca.AudioApplicationAudio,
+		CompressionLevel: 10,
+		PacketLoss:       1,
+		BufferedFrames:   100,
+		VBR:              true,
+	}
+	for _, opt := range options{
+		opt(encodeOptions)
+	}
+
+	encoder, err := dca.EncodeMem(resp.Body, encodeOptions)
 	if err != nil {
 		return
 	}
-
-	dca := exec.Command("./vendor/dca-rs", "--raw", "-i", "pipe:0")
-	dca.Stdin = ffmpegout
-	// dca.Stdout = os.Stderr
+	defer encoder.Cleanup()
 
 	f, err = os.Create(fmt.Sprintf("./media/audio/%s.dca", fname))
 	if err != nil {
@@ -115,19 +151,23 @@ func dcaFromURL(url string, fname string, duration int) (f *os.File, err error) 
 	}
 	defer f.Close()
 
-	dca.Stdout = f
+	frameDuration := encoder.FrameDuration()
+	fileDuration := time.Duration(0)
 
-	err = ffmpeg.Start()
-	if err != nil {
-		return
-	}
-	err = dca.Start()
-	if err != nil {
-		return
-	}
-	err = dca.Wait()
-	if err != nil {
-		return
+	// count frames to make sure we do not exceed the maximum allowed file size
+	var frame []byte
+	for ; fileDuration < maxDuration; fileDuration += frameDuration {
+		frame, err = encoder.OpusFrame()
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return
+		}
+		_, err = f.Write(frame)
+		if err != nil {
+			return
+		}
 	}
 	return
 }

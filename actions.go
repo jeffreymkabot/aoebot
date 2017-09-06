@@ -1,11 +1,12 @@
 package aoebot
 
 import (
-	"encoding/binary"
+	// "encoding/binary"
 	"fmt"
 	// "github.com/fatih/structs"
 	"io"
 	"os"
+	"github.com/jonas747/dca"
 )
 
 // Action can be performed given the environment of its trigger
@@ -87,25 +88,18 @@ func (va VoiceAction) load() (buf [][]byte, err error) {
 	}
 	defer file.Close()
 
-	var opuslen int16
+	decoder := dca.NewDecoder(file)
 
+	var frame []byte
 	for {
-		err = binary.Read(file, binary.LittleEndian, &opuslen)
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			return buf, nil
-		}
+		frame, err = decoder.OpusFrame()
 		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
 			return
 		}
-
-		inbuf := make([]byte, opuslen)
-		err = binary.Read(file, binary.LittleEndian, &inbuf)
-
-		if err != nil {
-			return
-		}
-
-		buf = append(buf, inbuf)
+		buf = append(buf, frame)
 	}
 }
 
