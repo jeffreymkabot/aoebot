@@ -79,6 +79,9 @@ func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err
 	}
 	b.commands = []Command{
 		&Help{},
+		&Reconnect{},
+		&Restart{},
+		&Shutdown{},
 	}
 	return
 }
