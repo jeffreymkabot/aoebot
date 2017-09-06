@@ -1,15 +1,15 @@
-package commands 
+package commands
 
 import (
 	"bytes"
 	"fmt"
 	"github.com/jeffreymkabot/aoebot"
+	"gopkg.in/mgo.v2/bson"
 	"strings"
 	"text/tabwriter"
-	"gopkg.in/mgo.v2/bson"
 )
 
-type Aoe2 struct{} 
+type Aoe2 struct{}
 
 func (a *Aoe2) Name() string {
 	return strings.Fields(a.Usage())[0]

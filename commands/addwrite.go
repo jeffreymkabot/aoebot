@@ -2,9 +2,9 @@ package commands
 
 import (
 	"errors"
+	"github.com/jeffreymkabot/aoebot"
 	"regexp"
 	"strings"
-	"github.com/jeffreymkabot/aoebot"
 )
 
 var writeCmdRegex = regexp.MustCompile(`^(?:"(\S.*)"|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)

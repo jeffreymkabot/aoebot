@@ -50,6 +50,7 @@ func main() {
 	}
 	bot.WithConfig(cfg.Bot)
 	bot.AddCommand(&commands.Aoe2{})
+	bot.AddCommand(&commands.GetMemes{})
 	bot.AddCommand(&commands.AddChannel{})
 	bot.AddCommand(&commands.AddReact{})
 	bot.AddCommand(&commands.DelReact{})

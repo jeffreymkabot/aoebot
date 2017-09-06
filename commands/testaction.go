@@ -1,8 +1,8 @@
 package commands
 
 import (
-	"strings"
 	"github.com/jeffreymkabot/aoebot"
+	"strings"
 )
 
 type TestReact struct{}

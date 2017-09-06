@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/jeffreymkabot/aoebot"
 	"strings"
 	"text/tabwriter"
-	"github.com/jeffreymkabot/aoebot"
 )
 
 type GetMemes struct{}

@@ -289,8 +289,8 @@ func (b *Bot) IsOwnEnvironment(env *Environment) bool {
 // currently only needs ID and GuildID from *discordgo.Channel, but may be convenient to just take everything
 // channel itself does not need to be exported
 type channel struct {
-	IsOpen bool
-	Users  int
+	IsOpen  bool
+	Users   int
 	Channel *discordgo.Channel
 }
 
