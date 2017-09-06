@@ -285,28 +285,13 @@ func (b *Bot) IsOwnEnvironment(env *Environment) bool {
 	return env.Author != nil && env.Author.ID == b.self.ID
 }
 
-func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
-	// Function signature needs to be exact to be detected as the Ready handler by discordgo
-	// Access b Bot through a closure
-	return func(s *discordgo.Session, r *discordgo.Ready) {
-		log.Printf("Got discord ready: %#v\n", r)
-		for _, g := range r.Guilds {
-			b.registerGuild(g)
-		}
-		b.addHandler(b.onGuildCreate())
-		b.addHandler(b.onMessageCreate())
-		b.addHandler(b.onVoiceStateUpdate())
-		b.Session.UpdateStatus(0, fmt.Sprintf("%s %s", b.Config.Prefix, (&Help{}).Name()))
-	}
-}
-
 // channel's fields must be exported to be visible to bson.Marshal
 // currently only needs ID and GuildID from *discordgo.Channel, but may be convenient to just take everything
 // channel itself does not need to be exported
 type channel struct {
 	IsOpen bool
 	Users  int
-	*discordgo.Channel
+	Channel *discordgo.Channel
 }
 
 // ChannelOption is a functional option used as a variadic parameter to AddManagedVoiceChannel
@@ -341,11 +326,12 @@ func (b *Bot) AddManagedVoiceChannel(guildID string, name string, options ...Cha
 	if err != nil {
 		return
 	}
+	log.Printf("created new discord channel %#v", ch.Channel)
 
 	delete := func(ch channel) {
-		log.Printf("Deleting channel %v", ch.Name)
-		b.Session.ChannelDelete(ch.ID)
-		b.Driver.ChannelDelete(ch.ID)
+		log.Printf("Deleting channel %v", ch.Channel.Name)
+		b.Session.ChannelDelete(ch.Channel.ID)
+		b.Driver.ChannelDelete(ch.Channel.ID)
 	}
 	err = b.Driver.ChannelAdd(ch)
 	if err != nil {
@@ -354,10 +340,10 @@ func (b *Bot) AddManagedVoiceChannel(guildID string, name string, options ...Cha
 	}
 
 	isEmpty := func(ch channel) bool {
-		g, err := b.Session.State.Guild(ch.GuildID)
-		if err != nil {
+		g, err := b.Session.State.Guild(ch.Channel.GuildID)
+		if err == nil {
 			for _, v := range g.VoiceStates {
-				if v.ChannelID == ch.ID {
+				if v.ChannelID == ch.Channel.ID {
 					return false
 				}
 			}
@@ -369,7 +355,7 @@ func (b *Bot) AddManagedVoiceChannel(guildID string, name string, options ...Cha
 	b.AddRoutine(channelManager(ch, delete, isEmpty, interval))
 
 	if ch.IsOpen {
-		err = b.Session.ChannelPermissionSet(ch.ID, ch.GuildID, "role", discordgo.PermissionVoiceUseVAD, 0)
+		err = b.Session.ChannelPermissionSet(ch.Channel.ID, ch.Channel.GuildID, "role", discordgo.PermissionVoiceUseVAD, 0)
 		if err != nil {
 			delete(ch)
 			return
@@ -379,7 +365,7 @@ func (b *Bot) AddManagedVoiceChannel(guildID string, name string, options ...Cha
 		data := struct {
 			UserLimit int `json:"user_limit"`
 		}{ch.Users}
-		_, err = b.Session.RequestWithBucketID("PATCH", discordgo.EndpointChannel(ch.ID), data, discordgo.EndpointChannel(ch.ID))
+		_, err = b.Session.RequestWithBucketID("PATCH", discordgo.EndpointChannel(ch.Channel.ID), data, discordgo.EndpointChannel(ch.Channel.ID))
 		if err != nil {
 			delete(ch)
 			return
@@ -407,7 +393,32 @@ func channelManager(ch channel, delete func(ch channel), isEmpty func(ch channel
 	}
 }
 
+func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
+	// Function signature needs to be exact to be detected as the Ready handler by discordgo
+	// Access b Bot through a closure
+	return func(s *discordgo.Session, r *discordgo.Ready) {
+		log.Printf("Got discord ready: %#v\n", r)
+		for _, g := range r.Guilds {
+			if !g.Unavailable {
+				b.registerGuild(g)
+			}
+		}
+		b.addHandler(b.onGuildCreate())
+		b.addHandler(b.onMessageCreate())
+		b.addHandler(b.onVoiceStateUpdate())
+		b.Session.UpdateStatus(0, fmt.Sprintf("%s %s", b.Config.Prefix, (&Help{}).Name()))
+	}
+}
+
+func (b *Bot) onGuildCreate() func(*discordgo.Session, *discordgo.GuildCreate) {
+	return func(s *discordgo.Session, g *discordgo.GuildCreate) {
+		// log.Printf("Got guild create %#v", g.Guild)
+		b.registerGuild(g.Guild)
+	}
+}
+
 func (b *Bot) registerGuild(g *discordgo.Guild) {
+	log.Printf("Register guild %v", g.Name)
 	b.speakTo(g)
 	for _, vs := range g.VoiceStates {
 		// TODO bots could be in a channel in multiple guilds
@@ -416,14 +427,15 @@ func (b *Bot) registerGuild(g *discordgo.Guild) {
 	// restore management of any voice channels recovered from db
 	channels := b.Driver.ChannelsGuild(g.ID)
 	if len(channels) > 0 {
+		log.Printf("Restore management of channels %v", channels)
 		delete := func(ch channel) {
-			log.Printf("Deleting channel %v", ch.Name)
-			b.Session.ChannelDelete(ch.ID)
-			b.Driver.ChannelDelete(ch.ID)
+			log.Printf("Deleting channel %v", ch.Channel.Name)
+			b.Session.ChannelDelete(ch.Channel.ID)
+			b.Driver.ChannelDelete(ch.Channel.ID)
 		}
 		isEmpty := func(ch channel) bool {
 			for _, v := range g.VoiceStates {
-				if v.ChannelID == ch.ID {
+				if v.ChannelID == ch.Channel.ID {
 					return false
 				}
 			}
@@ -433,15 +445,6 @@ func (b *Bot) registerGuild(g *discordgo.Guild) {
 		for _, ch := range channels {
 			b.AddRoutine(channelManager(ch, delete, isEmpty, interval))
 		}
-	}
-}
-
-func (b *Bot) onGuildCreate() func(*discordgo.Session, *discordgo.GuildCreate) {
-	return func(s *discordgo.Session, g *discordgo.GuildCreate) {
-		if g.Guild == nil {
-			return
-		}
-		b.registerGuild(g.Guild)
 	}
 }
 

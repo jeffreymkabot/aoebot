@@ -110,7 +110,7 @@ func (d *Driver) ChannelsGuild(guildID string) []channel {
 	channels := []channel{}
 	coll := d.DB("aoebot").C("channels")
 	query := bson.M{
-		"guildid": guildID,
+		"channel.guildid": guildID,
 	}
 	err := coll.Find(query).All(&channels)
 	if err != nil {
@@ -128,7 +128,7 @@ func (d *Driver) ChannelAdd(ch channel) error {
 func (d *Driver) ChannelDelete(channelID ...string) error {
 	coll := d.DB("aoebot").C("channels")
 	query := bson.M{
-		"id": bson.M{
+		"channel.id": bson.M{
 			"$in": channelID,
 		},
 	}
