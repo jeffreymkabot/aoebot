@@ -157,7 +157,7 @@ func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...
 	// count frames to make sure we do not exceed the maximum allowed file size
 	var frame []byte
 	for ; fileDuration < maxDuration; fileDuration += frameDuration {
-		frame, err = encoder.OpusFrame()
+		frame, err = encoder.ReadFrame()
 		if err != nil {
 			if err == io.EOF {
 				err = nil
