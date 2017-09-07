@@ -305,10 +305,10 @@ func ChannelOpenMic(b bool) ChannelOption {
 }
 
 // ChannelUsers sets whether the discord channel will have a user limit
-// values for n that are less than or equal to 0 or greater than 99 will have no effect
+// values for n that are less than 1 or greater than 99 will have no effect
 func ChannelUsers(n int) ChannelOption {
 	return func(ch *channel) {
-		if n > 0 {
+		if 0 < n && n < 100 {
 			ch.Users = n
 		}
 	}

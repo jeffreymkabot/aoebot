@@ -24,10 +24,20 @@ func (ac *AddChannel) Short() string {
 
 func (ac *AddChannel) Long() string {
 	return `Create an ad hoc voice channel in this guild.
-Use the "openmic" flag to override the channel's "Use Voice Activity" permission.
-Use the "users" flag to limit the number of users that can join the channel.
+Use the [-openmic] flag to override the channel's "Use Voice Activity" permission.
+Use the [-users] flag to limit the number of users that can join the channel.
+Values for [-users] that are less than 1 or greater than 99 will have no effect.
 I will automatically delete voice channels when I see they are vacant.
 I will only create so many voice channels for each guild.`
+}
+
+func (a *AddChannel) Examples() []string {
+	return []string{
+		`addchannel`,
+		`addchannel -openmic`,
+		`addchannel -users 4`,
+		`addchannel -openmic -users 6`,
+	}
 }
 
 func (ac *AddChannel) IsOwnerOnly() bool {

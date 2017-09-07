@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-var reactCmdRegex = regexp.MustCompile(`^(?:<:(\S+:\S+)>|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
+var reactCmdRegex = regexp.MustCompile(`^(?:<:(\S+:\S+)>|(\S.*)) on "(\S.*)"$`)
 
 type AddReact struct{}
 
@@ -19,7 +19,7 @@ func (a *AddReact) Name() string {
 }
 
 func (a *AddReact) Usage() string {
-	return `addreact [-regex] [emoji] on [phrase]`
+	return `addreact [-regex] [emoji] on "[phrase]"`
 }
 
 func (a *AddReact) Short() string {
@@ -27,17 +27,18 @@ func (a *AddReact) Short() string {
 }
 
 func (a *AddReact) Long() string {
-	return `Create an automatic message reaction based on the content of a message.
-Use the regex flag if "phrase" should be interpretted as a regular expression.
-Accepted syntax described here: https://github.com/google/re2/wiki/Syntax
-Otherwise, phrase is not case-sensitive and needs to match the entire message content to trigger the reaction.
-This is the inverse of the delreact command.`
+	return `Create an automatic reaction when a message matches [phrase].
+[phrase] is not case-sensitive and normally needs to match the entire message.
+Alternatively, use the [-regex] flag to treat phrase as a regular expression.
+Use a regular expression to match against patterns in the message instead of the entire message.
+Supprted regex described here: https://github.com/google/re2/wiki/Syntax.
+Reactions can be removed with the delreact command.`
 }
 
 func (a *AddReact) Examples() []string {
 	return []string{
 		`addreact :cat: on "meow"`,
-		`addreact -regex :wave: on "^(hello|hi)(,? aoebot)?[!?\.]?$"`,
+		`addreact -regex :wave: on "^hi(,? aoebot)?[!?]?$"`,
 	}
 }
 
@@ -72,17 +73,12 @@ func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
 		emoji = submatches[2]
 	}
 	if len(emoji) == 0 {
-		return errors.New("Bad emoji")
+		return errors.New("Couldn't parse emoji")
 	}
 
-	var phrase string
-	if len(submatches[3]) > 0 {
-		phrase = submatches[3]
-	} else {
-		phrase = submatches[4]
-	}
+	phrase := strings.ToLower(submatches[3])
 	if len(phrase) == 0 {
-		return errors.New("Bad phrase")
+		return errors.New("Couldn't parse phrase")
 	}
 
 	log.Printf("Trying emoji %v\n", emoji)
@@ -126,7 +122,7 @@ func (a *DelReact) Name() string {
 }
 
 func (a *DelReact) Usage() string {
-	return `delreact [-regex] [emoji] on [phrase]`
+	return `delreact [-regex] [emoji] on "[phrase]"`
 }
 
 func (a *DelReact) Short() string {
@@ -134,11 +130,16 @@ func (a *DelReact) Short() string {
 }
 
 func (a *DelReact) Long() string {
-	return `Remove an existing automatic message reaction.
-Use the regex flag if "phrase" should be interpretted as a regular expression.
-Accepted syntax described here: https://github.com/google/re2/wiki/Syntax
-This is the inverse of the addreact command.
-For example, an assocation created by "addreact 😊 on hello" can be removed with "delreact 😊 on hello".`
+	return `Remove an automatic reaction created by addreact.
+Use the [-regex] flag if [phrase] should be treated as a regular expression.
+Accepted syntax described here: https://github.com/google/re2/wiki/Syntax.`
+}
+
+func (d *DelReact) Examples() []string {
+	return []string{
+		`delreact :cat: on "meow"`,
+		`delreact -regex :wave: on "^hi(,? aoebot)?[!?]?$"`,
+	}
 }
 
 func (a *DelReact) IsOwnerOnly() bool {
@@ -169,17 +170,12 @@ func (a *DelReact) Run(env *aoebot.Environment, args []string) error {
 		emoji = submatches[2]
 	}
 	if len(emoji) == 0 {
-		return errors.New("Bad emoji")
+		return errors.New("Coudln't parse emoji")
 	}
 
-	var phrase string
-	if len(submatches[3]) > 0 {
-		phrase = submatches[3]
-	} else {
-		phrase = submatches[4]
-	}
+	phrase := submatches[3]
 	if len(phrase) == 0 {
-		return errors.New("Bad phrase")
+		return errors.New("Couldn't parse phrase")
 	}
 
 	cond := &aoebot.Condition{

@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-var addvoiceCmdRegexp = regexp.MustCompile(`^on (?:"(\S.*)"|(\S.*))$`)
+var addvoiceCmdRegexp = regexp.MustCompile(`^on "(\S.*)"$`)
 
 type AddVoice struct{}
 
@@ -23,7 +23,7 @@ func (a *AddVoice) Name() string {
 }
 
 func (a *AddVoice) Usage() string {
-	return `addvoice on [phrase]`
+	return `addvoice on "[phrase]"`
 }
 
 func (a *AddVoice) Short() string {
@@ -31,11 +31,11 @@ func (a *AddVoice) Short() string {
 }
 
 func (a *AddVoice) Long() string {
-	return `Upload an audio file that can be played in response to a phrase.
-You need to attach the audio file to the message that invokes this command.
+	return `Create an automatic audio response when a message matches [phrase].
+You need to attach an audio file to the same message that invokes this command.
 I will only take the first couple of seconds from the audio file.
 Phrase is not case-sensitive and needs to match the entire message content to trigger the response.
-This is the inverse of delvoice.`
+Responses can be removed with the delvoice command.`
 }
 
 func (a *AddVoice) Examples() []string {
@@ -74,14 +74,9 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 	}
 	submatches := addvoiceCmdRegexp.FindStringSubmatch(argString)
 
-	var phrase string
-	if len(submatches[1]) > 0 {
-		phrase = strings.ToLower(submatches[1])
-	} else {
-		phrase = strings.ToLower(submatches[2])
-	}
+	phrase := strings.ToLower(submatches[1])
 	if len(phrase) == 0 {
-		return errors.New("Bad phrase")
+		return errors.New("Couldn't parse phrase")
 	}
 
 	url := env.TextMessage.Attachments[0].URL
@@ -179,7 +174,7 @@ func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...
 	return
 }
 
-var delvoiceCmdRegexp = regexp.MustCompile(`^(?:"(\S.*)"|(\S.*)) on (?:"(\S.*)"|(\S.*))$`)
+var delvoiceCmdRegexp = regexp.MustCompile(`^"(\S.*)" on "(\S.*)"$`)
 
 type DelVoice struct{}
 
@@ -188,7 +183,7 @@ func (d *DelVoice) Name() string {
 }
 
 func (d *DelVoice) Usage() string {
-	return `delvoice [filename] on [phrase]`
+	return `delvoice "[filename]" on "[phrase]"`
 }
 
 func (d *DelVoice) Short() string {
@@ -196,13 +191,14 @@ func (d *DelVoice) Short() string {
 }
 
 func (d *DelVoice) Long() string {
-	return `Remove an existing association between sound clip and a phrase.
-This is the inverse of addvoice.
+	return `Remove an automatic audio response created by addvoice.
 Files uploaded with addvoice are saved to a relative path and with a new file extension.
 The relative path and new file extension can be discovered with the getmemes command.
-For example, suppose an assocation is created by uploading the file "greenhillzone.wav" with the command "addvoice on gotta go fast".
-The "getmemes" command will show: say ./media/audio/greenhillzone.wav.dca on "gotta go fast".
-This assocation can be deleted with "delvoice ./media/audio/greenhillzone.wav.dca on gotta go fast".`
+Suppose there is a response created using the file "greenhillzone.wav" on the phrase "gotta go fast".
+The "getmemes" command will show:
+say ./media/audio/greenhillzone.wav.dca on "gotta go fast"
+This response can be deleted with:
+delvoice ./media/audio/greenhillzone.wav.dca on "gotta go fast"`
 }
 
 func (d *DelVoice) Examples() []string {
@@ -226,24 +222,15 @@ func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 	}
 	submatches := delvoiceCmdRegexp.FindStringSubmatch(argString)
 
-	var filename string
-	if len(submatches[1]) > 0 {
-		filename = strings.ToLower(submatches[1])
-	} else {
-		filename = strings.ToLower(submatches[2])
-	}
+	filename := submatches[1]
 	if len(filename) == 0 {
-		return errors.New("Bad filename")
+		return errors.New("Coudln't parse filename")
 	}
 
-	var phrase string
-	if len(submatches[3]) > 0 {
-		phrase = strings.ToLower(submatches[3])
-	} else {
-		phrase = strings.ToLower(submatches[4])
-	}
+
+	phrase := strings.ToLower(submatches[2])
 	if len(phrase) == 0 {
-		return errors.New("Bad phrase")
+		return errors.New("Couldn't parse phrase")
 	}
 
 	cond := &aoebot.Condition{
