@@ -34,6 +34,13 @@ Otherwise, phrase is not case-sensitive and needs to match the entire message co
 This is the inverse of the delreact command.`
 }
 
+func (a *AddReact) Examples() []string {
+	return []string{
+		`addreact :cat: on "meow"`,
+		`addreact -regex :wave: on "^(hello|hi)(,? aoebot)?[!?\.]?$"`,
+	}
+}
+
 func (a *AddReact) IsOwnerOnly() bool {
 	return false
 }

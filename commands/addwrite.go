@@ -29,6 +29,13 @@ Phrase is not case-sensitive and needs to match the entire message content to tr
 This is the inverse of the delwrite command.`
 }
 
+func (a *AddWrite) Examples() []string {
+	return []string{
+		`addwrite "pong" on "ping"`,
+		`addwrite ":alien: ayy lmao :alien:" on "it's dat boi"`,
+	}
+}
+
 func (a *AddWrite) IsOwnerOnly() bool {
 	return false
 }

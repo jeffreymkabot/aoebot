@@ -5,9 +5,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/bwmarrin/discordgo"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 type Command interface {
@@ -17,6 +18,11 @@ type Command interface {
 	Long() string
 	IsOwnerOnly() bool
 	Run(*Environment, []string) error
+}
+
+type CommandWithExamples interface {
+	Command
+	Examples() []string
 }
 
 type Help struct{}
@@ -34,7 +40,13 @@ func (h *Help) Short() string {
 }
 
 func (h *Help) Long() string {
-	return h.Short() + "." + "."
+	return h.Short() + "."
+}
+
+func (h *Help) Examples() []string{
+	return []string{
+		`help addchannel`,
+	}
 }
 
 func (h *Help) IsOwnerOnly() bool {
@@ -53,38 +65,61 @@ func (h *Help) Run(env *Environment, args []string) error {
 						URL: env.Bot.Config.HelpThumbnail,
 					}
 				}
-				embed.Fields = []*discordgo.MessageEmbedField{
+				embed.Fields = []*discordgo.MessageEmbedField{}
+				embed.Fields = append(embed.Fields,
 					&discordgo.MessageEmbedField{
 						Name:  "Usage",
-						Value: c.Usage(),
-					},
+						Value: fmt.Sprintf("`%s %s`", env.Bot.Config.Prefix, c.Usage()),
+					})
+				if ce, ok := c.(CommandWithExamples); ok && len(ce.Examples()) > 0 {
+					examples := ""
+					for _, ex := range ce.Examples() {
+						examples += fmt.Sprintf("`%s %s`\n", env.Bot.Config.Prefix, ex)
+					}
+					embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+						Name:  "Example",
+						Value: examples,
+					})
+				}
+				embed.Fields = append(embed.Fields,
 					&discordgo.MessageEmbedField{
 						Name:  "Description",
 						Value: c.Long(),
-					},
-				}
+					})
 				_, err := env.Bot.Session.ChannelMessageSendEmbed(env.TextChannel.ID, embed)
 				return err
 			}
 		}
 	}
-	buf := &bytes.Buffer{}
-	w := tabwriter.NewWriter(buf, 0, 4, 0, ' ', 0)
-	fmt.Fprintf(w, "```\n")
-	fmt.Fprintf(w, "All commands start with \"%s\".\n", env.Bot.Config.Prefix)
-	fmt.Fprintf(w, "For example, \"%s help\".\n", env.Bot.Config.Prefix)
-	fmt.Fprintf(w, "To get more help about a command use: help [command].\n")
-	fmt.Fprintf(w, "For example, \"%s help addchannel\".\n", env.Bot.Config.Prefix)
-	fmt.Fprintf(w, "\n")
-	for _, c := range env.Bot.commands {
-		if !c.IsOwnerOnly() {
-			fmt.Fprintf(w, "%s    \t%s\n", c.Name(), c.Short())
+	embed := &discordgo.MessageEmbed{}
+	embed.Title = h.Name()
+	embed.Color = 0x1dd7f8
+	if env.Bot.Config.HelpThumbnail != "" {
+		embed.Thumbnail = &discordgo.MessageEmbedThumbnail{
+			URL: env.Bot.Config.HelpThumbnail,
 		}
 	}
-	fmt.Fprintf(w, "\n")
-	fmt.Fprintf(w, "```\n")
+	embed.Description = fmt.Sprintf("All commands start with `%s`.\n", env.Bot.Config.Prefix)
+	embed.Description += fmt.Sprintf("To get more help about any command use `%s %s`.\n", env.Bot.Config.Prefix, h.Usage())
+	if len(h.Examples()) > 0 {
+		embed.Description += fmt.Sprintf("For example, `%s %s`.\n", env.Bot.Config.Prefix, h.Examples()[0])
+	}
+	buf := &bytes.Buffer{}
+	w := tabwriter.NewWriter(buf, 0, 4, 0, ' ', 0)
+	for _, c := range env.Bot.commands {
+		if !c.IsOwnerOnly() {
+			fmt.Fprintf(w, "`%s    \t%s`\n", c.Name(), c.Short())
+		}
+	}
 	w.Flush()
-	return env.Bot.Write(env.TextChannel.ID, buf.String(), false)
+	embed.Fields = []*discordgo.MessageEmbedField{
+		&discordgo.MessageEmbedField{
+			Name: "Commands",
+			Value: buf.String(),
+		},
+	}
+	_, err := env.Bot.Session.ChannelMessageSendEmbed(env.TextChannel.ID, embed)
+	return err
 }
 
 type Reconnect struct{}

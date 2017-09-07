@@ -38,6 +38,13 @@ Phrase is not case-sensitive and needs to match the entire message content to tr
 This is the inverse of delvoice.`
 }
 
+func (a *AddVoice) Examples() []string {
+	return []string{
+		`addvoice on "skrrt"`,
+		`addvoice on "gotta go fast"`,
+	}
+}
+
 func (a *AddVoice) IsOwnerOnly() bool {
 	return false
 }
@@ -79,7 +86,7 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 
 	url := env.TextMessage.Attachments[0].URL
 	filename := env.TextMessage.Attachments[0].Filename
-	duration := time.Duration(env.Bot.Config.MaxManagedVoiceDuration)*time.Second
+	duration := time.Duration(env.Bot.Config.MaxManagedVoiceDuration) * time.Second
 	file, err := dcaFromURL(url, filename, duration, withVolume(*vol), withFilters(*filters))
 	if err != nil {
 		return err
@@ -135,7 +142,7 @@ func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...
 		BufferedFrames:   100,
 		VBR:              true,
 	}
-	for _, opt := range options{
+	for _, opt := range options {
 		opt(encodeOptions)
 	}
 
@@ -196,6 +203,12 @@ The relative path and new file extension can be discovered with the getmemes com
 For example, suppose an assocation is created by uploading the file "greenhillzone.wav" with the command "addvoice on gotta go fast".
 The "getmemes" command will show: say ./media/audio/greenhillzone.wav.dca on "gotta go fast".
 This assocation can be deleted with "delvoice ./media/audio/greenhillzone.wav.dca on gotta go fast".`
+}
+
+func (d *DelVoice) Examples() []string {
+	return []string{
+		`delvoice "./media/audiogreenhillzone.dca" on "gotta go fast"`,
+	}
 }
 
 func (d *DelVoice) IsOwnerOnly() bool {
