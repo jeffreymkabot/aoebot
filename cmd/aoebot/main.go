@@ -60,9 +60,7 @@ func main() {
 	bot.AddCommand(&commands.DelVoice{})
 	bot.AddCommand(&commands.Source{})
 	bot.AddCommand(&commands.Stats{})
-	bot.AddCommand(&commands.TestReact{})
-	bot.AddCommand(&commands.TestWrite{})
-	bot.AddCommand(&commands.TestVoice{})
+	bot.AddCommand(&commands.TestAction{})
 
 	err = bot.Start()
 	if err != nil {
