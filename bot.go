@@ -201,8 +201,17 @@ func (b *Bot) Write(channelID string, message string, tts bool) (err error) {
 }
 
 // React with an emoji to a message in a channel in a guild
-func (b *Bot) React(channelID string, messageID string, emoji string) (err error) {
+// Returns a function to remove the reaction
+func (b *Bot) React(channelID string, messageID string, emoji string) (unreact func() error, err error) {
+	unreact = func() error {
+		return nil
+	}
 	err = b.Session.MessageReactionAdd(channelID, messageID, emoji)
+	if err == nil {
+		unreact = func() error {
+			return b.Session.MessageReactionRemove(channelID, messageID, emoji, "@me")
+		}
+	}
 	return
 }
 

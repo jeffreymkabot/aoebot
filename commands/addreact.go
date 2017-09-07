@@ -84,7 +84,7 @@ func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
 	log.Printf("Trying emoji %v\n", emoji)
 	// immediately try to react to this message with that emoji
 	// to verify that the argument passed to the command is a valid emoji for reactions
-	err = env.Bot.React(env.TextChannel.ID, env.TextMessage.ID, emoji)
+	unreact, err := env.Bot.React(env.TextChannel.ID, env.TextMessage.ID, emoji)
 	if err != nil {
 		if restErr, ok := err.(discordgo.RESTError); ok && restErr.Message != nil {
 			return errors.New(restErr.Message.Message)
@@ -102,6 +102,7 @@ func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
 	if *isRegex {
 		regexPhrase, err := regexp.Compile(phrase)
 		if err != nil {
+			unreact()
 			return err
 		}
 		cond.RegexPhrase = regexPhrase.String()
@@ -110,6 +111,7 @@ func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
 	}
 	err = env.Bot.Driver.ConditionAdd(cond, env.Author.String())
 	if err != nil {
+		unreact()
 		return err
 	}
 	return nil

@@ -51,7 +51,8 @@ type ReactAction struct {
 }
 
 func (ra ReactAction) Perform(env *Environment) error {
-	return env.Bot.React(env.TextChannel.ID, env.TextMessage.ID, ra.Emoji)
+	_, err := env.Bot.React(env.TextChannel.ID, env.TextMessage.ID, ra.Emoji)
+	return err
 }
 
 func (ra ReactAction) kind() ActionType {
