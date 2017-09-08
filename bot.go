@@ -3,6 +3,7 @@ package aoebot
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 	"sync"
@@ -217,10 +218,10 @@ func (b *Bot) React(channelID string, messageID string, emoji string) (unreact f
 
 // Say some audio frames to a channel in a guild
 // Say drops the payload when the voicebox for that guild queue is full
-func (b *Bot) Say(guildID string, channelID string, audio [][]byte) (err error) {
+func (b *Bot) Say(guildID string, channelID string, reader io.Reader) (err error) {
 	if vb, ok := b.voiceboxes[guildID]; ok && vb != nil && vb.queue != nil {
 		vp := &voicePayload{
-			buffer:    audio,
+			reader:    reader,
 			channelID: channelID,
 		}
 		select {
@@ -235,10 +236,10 @@ func (b *Bot) Say(guildID string, channelID string, audio [][]byte) (err error) 
 }
 
 // helper func
-func (b *Bot) sayToUserInGuild(guild *discordgo.Guild, userID string, audio [][]byte) (err error) {
+func (b *Bot) sayToUserInGuild(guild *discordgo.Guild, userID string, reader io.Reader) (err error) {
 	for _, vs := range guild.VoiceStates {
 		if vs.UserID == userID {
-			return b.Say(guild.ID, vs.ChannelID, audio)
+			return b.Say(guild.ID, vs.ChannelID, reader)
 		}
 	}
 	err = fmt.Errorf("Couldn't find user %v in a voice channel in guild %v", userID, guild.ID)

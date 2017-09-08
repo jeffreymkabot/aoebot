@@ -1,12 +1,11 @@
 package aoebot
 
 import (
-	// "encoding/binary"
+	"bytes"
 	"fmt"
 	// "github.com/fatih/structs"
 	"io"
 	"os"
-	"github.com/jonas747/dca"
 )
 
 // Action can be performed given the environment of its trigger
@@ -70,38 +69,27 @@ type VoiceAction struct {
 }
 
 func (va VoiceAction) Perform(env *Environment) error {
-	// TODO cache result of sa.load
-	buf, err := va.load()
+	// TODO could cache result of sa.load
+	r, err := va.load()
 	if err != nil {
 		return err
 	}
 	if env.VoiceChannel != nil {
-		return env.Bot.Say(env.Guild.ID, env.VoiceChannel.ID, buf)
+		return env.Bot.Say(env.Guild.ID, env.VoiceChannel.ID, r)
 	}
-	return env.Bot.sayToUserInGuild(env.Guild, env.Author.ID, buf)
+	return env.Bot.sayToUserInGuild(env.Guild, env.Author.ID, r)
 }
 
-func (va VoiceAction) load() (buf [][]byte, err error) {
-	buf = make([][]byte, 0)
+func (va VoiceAction) load() (io.Reader, error) {
 	file, err := os.Open(va.File)
 	if err != nil {
-		return
+		return nil, err
 	}
 	defer file.Close()
 
-	decoder := dca.NewDecoder(file)
-
-	var frame []byte
-	for {
-		frame, err = decoder.OpusFrame()
-		if err != nil {
-			if err == io.EOF {
-				err = nil
-			}
-			return
-		}
-		buf = append(buf, frame)
-	}
+	buf := bytes.NewBuffer([]byte{})
+	_, err = buf.ReadFrom(file)
+	return buf, err
 }
 
 func (va VoiceAction) kind() ActionType {

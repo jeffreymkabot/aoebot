@@ -2,8 +2,9 @@ package aoebot
 
 import (
 	"github.com/bwmarrin/discordgo"
+	"github.com/jonas747/dca"
+	"io"
 	"log"
-	"sync"
 	"time"
 )
 
@@ -13,19 +14,19 @@ type VoiceConfig struct {
 	AfkTimeout  int `toml:"afk_timeout"`
 }
 
-// Voicebox
-// Creating a voicebox with newVoiceBox launches a goroutine that listens to payloads on the voicebox's queue channel
+// voicebox
+// Creating a voicebox with newVoiceBox launches a goroutine that listens for payloads on the voicebox's queue channel
 // Since discord permits only one voice connection per guild,
 // Bot should create exactly one voicebox for each guild
-// Voicebox is like a specialized botroutine
+// voicebox is like a specialized botroutine
 type voicebox struct {
 	queue chan<- *voicePayload
 	close func()
 }
 
 type voicePayload struct {
-	buffer    [][]byte
 	channelID string
+	reader    io.Reader
 }
 
 // speakTo opens the conversation with a discord guild
@@ -43,8 +44,6 @@ func newVoiceBox(s *discordgo.Session, g *discordgo.Guild, cfg VoiceConfig) *voi
 	// quit channel is hidden from the outside world
 	// accessed only through closure for voicebox.close
 	quit := make(chan struct{})
-	// Use a wait group so the bot can finish disconnecting the old voice connection before e.g. making a new worker
-	wg := &sync.WaitGroup{}
 	close := func() {
 		select {
 		case <-quit:
@@ -52,20 +51,21 @@ func newVoiceBox(s *discordgo.Session, g *discordgo.Guild, cfg VoiceConfig) *voi
 			return
 		default:
 			close(quit)
-			// wait for payloadSender to return and hopefully disconnect from voice channel
-			wg.Wait()
 		}
 	}
-	wg.Add(1)
-	go payloadSender(s, g, queue, quit, cfg.SendTimeout, cfg.AfkTimeout, wg)
+	join := func(channelID string) (*discordgo.VoiceConnection, error) {
+		return s.ChannelVoiceJoin(g.ID, channelID, false, true)
+	}
+	// coerce queue and quit to receieve-only in payloadSender
+	go payloadSender(join, g.AfkChannelID, queue, quit, cfg.SendTimeout, cfg.AfkTimeout)
+	// coerce queue to send-only in voicebox
 	return &voicebox{
 		queue: queue,
 		close: close,
 	}
 }
 
-func payloadSender(s *discordgo.Session, g *discordgo.Guild, queue <-chan *voicePayload, quit <-chan struct{}, sendTimeout int, afkTimeout int, wg *sync.WaitGroup) {
-	defer wg.Done()
+func payloadSender(join func(channelID string) (*discordgo.VoiceConnection, error), afkChannelID string, queue <-chan *voicePayload, quit <-chan struct{}, sendTimeout int, afkTimeout int) {
 	if queue == nil || quit == nil {
 		return
 	}
@@ -76,13 +76,13 @@ func payloadSender(s *discordgo.Session, g *discordgo.Guild, queue <-chan *voice
 	var vp *voicePayload
 	var ok bool
 
+	var reader dca.OpusReader
 	var frame []byte
 
 	var afkTimer <-chan time.Time
 
 	disconnect := func() {
-		if vc != nil && vc.Ready {
-			_ = vc.Speaking(false)
+		if vc != nil {
 			_ = vc.Disconnect()
 			vc = nil
 		}
@@ -90,7 +90,7 @@ func payloadSender(s *discordgo.Session, g *discordgo.Guild, queue <-chan *voice
 
 	defer disconnect()
 
-	vc, _ = s.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
+	vc, _ = join(afkChannelID)
 
 PayloadLoop:
 	for {
@@ -106,33 +106,33 @@ PayloadLoop:
 		select {
 		case <-quit:
 			return
-		case vp, ok = <-queue:
-			if !ok {
-				return
-			}
+		// afktimer is started only once after each payload
+		// not every time we enter this select, to prevent repeatedly rejoining afk
 		case <-afkTimer:
-			log.Printf("Afk timeout in guild %v", g.ID)
-			// if vc != nil && vc.ChannelID == g.AfkChannelID {
-			// 	continue PayloadLoop
-			// }
-			vc, err = s.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
+			log.Printf("Afk timeout in guild %v", vc.GuildID)
+			vc, err = join(afkChannelID)
 			if err != nil {
 				disconnect()
 			}
 			continue PayloadLoop
+		case vp, ok = <-queue:
+			if !ok {
+				return
+			}
 		}
 
-		if vp.channelID == g.AfkChannelID {
+		if vp.channelID == afkChannelID {
 			continue PayloadLoop
 		}
-		vc, err = s.ChannelVoiceJoin(g.ID, vp.channelID, false, true)
+		reader = dca.NewDecoder(vp.reader)
+		vc, err = join(vp.channelID)
 		if err != nil {
 			continue PayloadLoop
 		}
 
 		_ = vc.Speaking(true)
 	FrameLoop:
-		for _, frame = range vp.buffer {
+		for {
 			// check quit signal between every frame
 			// when multiple cases in a select are ready at same time a case is selected randomly
 			// otherwise it would be possible for a quit signal to go ignored for an unacceptable amount of time if there are a lot of frames in the buffer
@@ -143,23 +143,24 @@ PayloadLoop:
 			default:
 			}
 
+			frame, err = reader.OpusFrame()
+			// underlying impl is encoding/binary.Read
+			// err is EOF iff no bytes were read
+			// err is UnexpectedEOF if partial frame is read
+			if err != nil {
+				break FrameLoop
+			}
+
 			select {
 			case <-quit:
 				return
 			case vc.OpusSend <- frame:
-			// TODO this could be a memory leak if we keep making new timers?
 			case <-time.After(time.Duration(sendTimeout) * time.Millisecond):
-				log.Printf("Opus send timeout in guild %v", g.ID)
+				log.Printf("Opus send timeout in guild %v", vc.GuildID)
 				break FrameLoop
 			}
 		}
 		_ = vc.Speaking(false)
-		// TODO this could be a memory leak if we keep making new timers?
 		afkTimer = time.NewTimer(time.Duration(afkTimeout) * time.Millisecond).C
 	}
-}
-
-// TODO voice worker pipeline instead of voicebox god function?
-func (b *Bot) newVoiceWorker(g *discordgo.Guild) *voicebox {
-	return nil
 }
