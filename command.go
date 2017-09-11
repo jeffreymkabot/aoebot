@@ -105,10 +105,10 @@ func (h *Help) Run(env *Environment, args []string) error {
 		embed.Description += fmt.Sprintf("For example, `%s %s`.\n", env.Bot.Config.Prefix, h.Examples()[0])
 	}
 	buf := &bytes.Buffer{}
-	w := tabwriter.NewWriter(buf, 0, 4, 0, ' ', 0)
+	w := tabwriter.NewWriter(buf, 4, 4, 0, '.', 0)
 	for _, c := range env.Bot.commands {
 		if !c.IsOwnerOnly() {
-			fmt.Fprintf(w, "`%s    \t%s`\n", c.Name(), c.Short())
+			fmt.Fprintf(w, "`%s..\t%s`\n", c.Name(), c.Short())
 		}
 	}
 	w.Flush()

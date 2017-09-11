@@ -20,7 +20,7 @@ func (g *GetMemes) Usage() string {
 }
 
 func (g *GetMemes) Short() string {
-	return `Get the memes I have on file for this guild`
+	return `List actions created by add* commands`
 }
 
 func (g *GetMemes) Long() string {
