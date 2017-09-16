@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/jeffreymkabot/aoebot/discordvoice"
 )
 
 // ErrQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit
@@ -25,7 +26,7 @@ type Config struct {
 	MaxManagedVoiceDuration    int    `toml:"max_managed_voice_duration"`
 	MaxManagedChannels         int    `toml:"max_managed_channels"`
 	ManagedChannelPollInterval int    `toml:"managed_channel_poll_interval"`
-	Voice                      VoiceConfig
+	Voice                      discordvoice.VoiceConfig
 }
 
 var DefaultConfig = Config{
@@ -34,7 +35,7 @@ var DefaultConfig = Config{
 	MaxManagedVoiceDuration:    5,
 	MaxManagedChannels:         5,
 	ManagedChannelPollInterval: 60,
-	Voice: VoiceConfig{
+	Voice: discordvoice.VoiceConfig{
 		QueueLength: 100,
 		SendTimeout: 1000,
 		AfkTimeout:  300,
@@ -220,9 +221,9 @@ func (b *Bot) React(channelID string, messageID string, emoji string) (unreact f
 // Say drops the payload when the voicebox for that guild queue is full
 func (b *Bot) Say(guildID string, channelID string, reader io.Reader) (err error) {
 	if vb, ok := b.voiceboxes[guildID]; ok && vb != nil && vb.queue != nil {
-		vp := &voicePayload{
-			reader:    reader,
-			channelID: channelID,
+		vp := &discordvoice.Payload{
+			Reader:    reader,
+			ChannelID: channelID,
 		}
 		select {
 		case vb.queue <- vp:
@@ -246,12 +247,6 @@ func (b *Bot) sayToUserInGuild(guild *discordgo.Guild, userID string, reader io.
 	return
 }
 
-// Listen to some audio frames in a guild
-// TODO
-func (b *Bot) Listen(guildID string, channelID string, duration time.Duration) (err error) {
-	return
-}
-
 // Add an event handler to the discord session and retain a reference to the handler remover
 func (b *Bot) addHandler(handler interface{}) {
 	unhandler := b.Session.AddHandler(handler)
@@ -262,6 +257,12 @@ func (b *Bot) addHandler(handler interface{}) {
 func (b *Bot) addHandlerOnce(handler interface{}) {
 	unhandler := b.Session.AddHandlerOnce(handler)
 	b.unhandlers[&unhandler] = struct{}{}
+}
+
+// IsOwnEnvironment is true when an environment's seed is the result of the bot's own actions/behavior
+// This is useful to prevent the bot from reacting to itself
+func (b *Bot) IsOwnEnvironment(env *Environment) bool {
+	return env.Author != nil && env.Author.ID == b.self.ID
 }
 
 type botroutine struct {
@@ -287,12 +288,6 @@ func newRoutine(f func(<-chan struct{})) *botroutine {
 func (b *Bot) AddRoutine(f func(<-chan struct{})) {
 	r := newRoutine(f)
 	b.routines[r] = struct{}{}
-}
-
-// IsOwnEnvironment is true when an environment's seed is the result of the bot's own actions/behavior
-// This is useful to prevent the bot from reacting to itself
-func (b *Bot) IsOwnEnvironment(env *Environment) bool {
-	return env.Author != nil && env.Author.ID == b.self.ID
 }
 
 // channel's fields must be exported to be visible to bson.Marshal
@@ -403,126 +398,21 @@ func channelManager(ch channel, delete func(ch channel), isEmpty func(ch channel
 	}
 }
 
-func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
-	// Function signature needs to be exact to be detected as the Ready handler by discordgo
-	// Access b Bot through a closure
-	return func(s *discordgo.Session, r *discordgo.Ready) {
-		log.Printf("Got discord ready: %#v\n", r)
-		for _, g := range r.Guilds {
-			if !g.Unavailable {
-				b.registerGuild(g)
-			}
-		}
-		b.addHandler(b.onGuildCreate())
-		b.addHandler(b.onMessageCreate())
-		b.addHandler(b.onVoiceStateUpdate())
-		b.Session.UpdateStatus(0, fmt.Sprintf("%s %s", b.Config.Prefix, (&Help{}).Name()))
-	}
+type voicebox struct {
+	queue chan<- *discordvoice.Payload
+	close func()
 }
 
-func (b *Bot) onGuildCreate() func(*discordgo.Session, *discordgo.GuildCreate) {
-	return func(s *discordgo.Session, g *discordgo.GuildCreate) {
-		// log.Printf("Got guild create %#v", g.Guild)
-		b.registerGuild(g.Guild)
+// speakTo opens the conversation with a discord guild
+func (b *Bot) speakTo(g *discordgo.Guild) {
+	vb, ok := b.voiceboxes[g.ID]
+	if ok {
+		vb.close()
 	}
-}
-
-func (b *Bot) registerGuild(g *discordgo.Guild) {
-	log.Printf("Register guild %v", g.Name)
-	b.speakTo(g)
-	for _, vs := range g.VoiceStates {
-		// TODO bots could be in a channel in multiple guilds
-		b.occupancy[vs.UserID] = vs.ChannelID
-	}
-	// restore management of any voice channels recovered from db
-	channels := b.Driver.ChannelsGuild(g.ID)
-	if len(channels) > 0 {
-		log.Printf("Restore management of channels %v", channels)
-		delete := func(ch channel) {
-			log.Printf("Deleting channel %v", ch.Channel.Name)
-			b.Session.ChannelDelete(ch.Channel.ID)
-			b.Driver.ChannelDelete(ch.Channel.ID)
-		}
-		isEmpty := func(ch channel) bool {
-			for _, v := range g.VoiceStates {
-				if v.ChannelID == ch.Channel.ID {
-					return false
-				}
-			}
-			return true
-		}
-		interval := time.Duration(b.Config.ManagedChannelPollInterval) * time.Second
-		for _, ch := range channels {
-			b.AddRoutine(channelManager(ch, delete, isEmpty, interval))
-		}
-	}
-}
-
-func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreate) {
-	// Create a context around a voice state when the bot sees a new text message
-	// Perform any actions that match that contex
-	// Function signature needs to be exact to be detected as the right event handler by discordgo
-	// Access b Bot through a closure
-	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
-		if m.Message == nil {
-			return
-		}
-
-		env, err := NewEnvironment(b, m.Message)
-		if err != nil {
-			log.Printf("Error resolving environment of new message: %v", err)
-			return
-		}
-		log.Printf("Saw a new message (%v) by %s in channel %v in guild %v", env.TextMessage.Content, env.Author, env.TextChannel.Name, env.Guild.Name)
-		if env.Author.Bot || b.IsOwnEnvironment(env) {
-			return
-		}
-
-		if strings.HasPrefix(env.TextMessage.Content, b.Config.Prefix) {
-			args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(env.TextMessage.Content, b.Config.Prefix)))
-			cmd, args := b.command(args)
-			log.Printf("Exec cmd %v by %s with %v", cmd.Name(), env.Author, args)
-			b.exec(env, cmd, args)
-		} else {
-			actions := b.Driver.actions(env)
-			log.Printf("Dispatch actions %v", actions)
-			b.dispatch(env, actions...)
-		}
-	}
-}
-
-func (b *Bot) onVoiceStateUpdate() func(*discordgo.Session, *discordgo.VoiceStateUpdate) {
-	// Create a context around a voice state when the bot sees someone's voice channel change
-	// Perform any actions that match that contex
-	// Function signature needs to be exact to be detected as the right event handler by discordgo
-	// Access b Bot through a closure
-	return func(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
-		userID := v.VoiceState.UserID
-		channelID := v.VoiceState.ChannelID
-
-		occupancy := b.occupancy[userID]
-		if occupancy != channelID {
-			b.occupancy[userID] = channelID
-			if channelID == "" {
-				return
-			}
-
-			env, err := NewEnvironment(b, v.VoiceState)
-			if err != nil {
-				log.Printf("Error resolving voice state context: %v", err)
-				return
-			}
-			log.Printf("Saw user %s join the voice channel %v in guild %v", env.Author, env.VoiceChannel.Name, env.Guild.Name)
-			if b.IsOwnEnvironment(env) {
-				return
-			}
-
-			// %
-
-			actions := b.Driver.actions(env)
-			log.Printf("Found actions %v", actions)
-			b.dispatch(env, actions...)
-		}
+	c, f := discordvoice.Connect(b.Session, g, b.Config.Voice)
+	b.voiceboxes[g.ID] = &voicebox{
+		queue: c,
+		close: f,
 	}
 }
 
