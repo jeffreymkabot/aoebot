@@ -2,9 +2,10 @@ package commands
 
 import (
 	"errors"
-	"github.com/jeffreymkabot/aoebot"
 	"regexp"
 	"strings"
+
+	"github.com/jeffreymkabot/aoebot"
 )
 
 var writeCmdRegex = regexp.MustCompile(`^"(\S.*)" on "(\S.*)"$`)
@@ -99,7 +100,7 @@ func (d *DelWrite) Long() string {
 	return `Remove an automatic response created by addwrite.`
 }
 
-func (d *DelWrite) Examples() []string{
+func (d *DelWrite) Examples() []string {
 	return []string{
 		`delwrite "who's there?" on "hello"`,
 	}

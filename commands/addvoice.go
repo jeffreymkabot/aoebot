@@ -4,14 +4,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/jeffreymkabot/aoebot"
-	"github.com/jonas747/dca"
 	"io"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/jeffreymkabot/aoebot"
+	"github.com/jonas747/dca"
 )
 
 var addvoiceCmdRegexp = regexp.MustCompile(`^on "(\S.*)"$`)
@@ -226,7 +227,6 @@ func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 	if len(filename) == 0 {
 		return errors.New("Coudln't parse filename")
 	}
-
 
 	phrase := strings.ToLower(submatches[2])
 	if len(phrase) == 0 {

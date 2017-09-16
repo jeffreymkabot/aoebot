@@ -3,10 +3,11 @@ package commands
 import (
 	"bytes"
 	"fmt"
-	"github.com/jeffreymkabot/aoebot"
-	"gopkg.in/mgo.v2/bson"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/jeffreymkabot/aoebot"
+	"gopkg.in/mgo.v2/bson"
 )
 
 type Aoe2 struct{}

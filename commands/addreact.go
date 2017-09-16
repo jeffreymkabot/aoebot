@@ -3,11 +3,12 @@ package commands
 import (
 	"errors"
 	"flag"
-	"github.com/bwmarrin/discordgo"
-	"github.com/jeffreymkabot/aoebot"
 	"log"
 	"regexp"
 	"strings"
+
+	"github.com/bwmarrin/discordgo"
+	"github.com/jeffreymkabot/aoebot"
 )
 
 var reactCmdRegex = regexp.MustCompile(`^(?:<:(\S+:\S+)>|(\S.*)) on "(\S.*)"$`)

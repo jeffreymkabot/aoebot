@@ -43,7 +43,7 @@ func (h *Help) Long() string {
 	return h.Short() + "."
 }
 
-func (h *Help) Examples() []string{
+func (h *Help) Examples() []string {
 	return []string{
 		`help addchannel`,
 	}
@@ -114,7 +114,7 @@ func (h *Help) Run(env *Environment, args []string) error {
 	w.Flush()
 	embed.Fields = []*discordgo.MessageEmbedField{
 		&discordgo.MessageEmbedField{
-			Name: "Commands",
+			Name:  "Commands",
 			Value: buf.String(),
 		},
 	}

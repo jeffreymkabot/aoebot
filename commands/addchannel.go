@@ -4,8 +4,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/jeffreymkabot/aoebot"
 	"strings"
+
+	"github.com/jeffreymkabot/aoebot"
 )
 
 type AddChannel struct{}

@@ -3,7 +3,6 @@ package aoebot
 import (
 	"bytes"
 	"fmt"
-	// "github.com/fatih/structs"
 	"io"
 	"os"
 )

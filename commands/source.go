@@ -1,8 +1,9 @@
 package commands
 
 import (
-	"github.com/jeffreymkabot/aoebot"
 	"strings"
+
+	"github.com/jeffreymkabot/aoebot"
 )
 
 type Source struct{}
