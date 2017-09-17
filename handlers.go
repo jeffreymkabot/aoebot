@@ -14,11 +14,11 @@ func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
 	// Access b Bot through a closure
 	return func(s *discordgo.Session, r *discordgo.Ready) {
 		log.Printf("Got discord ready: %#v\n", r)
-		// for _, g := range r.Guilds {
-		// 	if !g.Unavailable {
-		// 		b.registerGuild(g)
-		// 	}
-		// }
+		for _, g := range r.Guilds {
+			if !g.Unavailable {
+				b.registerGuild(g)
+			}
+		}
 		b.addHandler(b.onGuildCreate())
 		b.addHandler(b.onMessageCreate())
 		b.addHandler(b.onVoiceStateUpdate())
