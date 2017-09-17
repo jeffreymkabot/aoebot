@@ -1,0 +1,25 @@
+# discord bot token
+token = ""
+# mongodb url including user/pass and database
+mongo = ""
+# snowflake of discord user authorized to execute admin commands
+owner = ""
+
+[bot]
+prefix = "@!"
+max_managed_conditions = 50
+# number of seconds to read into a source audio file for a new voice action
+max_managed_voice_duration = 4
+max_managed_channels = 5
+# amount of time to wait in seconds before polling a managed channel to see if it should be deleted
+managed_channel_poll_interval = 60
+help_thumbnail = ""
+
+
+[bot.voice]
+# maximum number of voice payloads that can wait to be processed per guild at any time
+queue_length = 20
+# amount of time to wait in milliseconds for voice send websocket to accept packet before giving up
+send_timeout = 1000
+# amount of time to wait in milliseconds for another voice payload before joining afk channel / disconnecting
+afk_timeout = 300

@@ -1,17 +1,70 @@
-# Binaries for programs and plugins
+# Binaries
 **/*.exe
 **/*.dll
 **/*.so
 **/*.dylib
 
-# CLI utilities
+# CLI
 **/*.bat
 **/*.sh
 
-# Files that I leave for myself as notes
-**/*.txt
+# Config
+**/*.json
+**/*.yml
+**/*.toml
+!config.example.toml
 
-# Any zips I accidentally leave around
+# Media files not explicitly whitelisted
+/media/*
+!/media/audio
+/media/audio/*
+!media/audio/01 yes.dca
+!media/audio/02 no.dca
+!media/audio/03 food please.dca
+!media/audio/04 wood please.dca
+!media/audio/05 gold please.dca
+!media/audio/06 stone please.dca
+!media/audio/07 ahh.dca
+!media/audio/08 all hail.dca
+!media/audio/09 oooh.dca
+!media/audio/10 back to age 1.dca
+!media/audio/11 herb laugh.dca
+!media/audio/12 being rushed.dca
+!media/audio/13 blame your isp.dca
+!media/audio/14 start the game.dca
+!media/audio/15 don't point that thing.dca
+!media/audio/16 enemy sighted.dca
+!media/audio/17 it is good.dca
+!media/audio/18 i need a monk.dca
+!media/audio/19 long time no siege.dca
+!media/audio/20 my granny.dca
+!media/audio/21 nice town i'll take it.dca
+!media/audio/22 quit touchin.dca
+!media/audio/23 raiding party.dca
+!media/audio/24 dadgum.dca
+!media/audio/25 smite me.dca
+!media/audio/26 the wonder.dca
+!media/audio/27 you play 2 hours.dca
+!media/audio/28 you should see the other guy.dca
+!media/audio/29 roggan.dca
+!media/audio/30 wololo.dca
+!media/audio/31 attack an enemy now.dca
+!media/audio/32 cease creating extra villagers.dca
+!media/audio/33 create extra villagers.dca
+!media/audio/34 build a navy.dca
+!media/audio/35 stop building a navy.dca
+!media/audio/36 wait for my signal to attack.dca
+!media/audio/37 build a wonder.dca
+!media/audio/38 give me your extra resources.dca
+!media/audio/39 ally.dca
+!media/audio/40 enemy.dca
+!media/audio/41 neutral.dca
+!media/audio/42 what age are you in.dca
+
+# WIP Dependencies
+vendor/**
+
+# Archives
 **/*.7z
 **/*.dmg
 **/*.gz

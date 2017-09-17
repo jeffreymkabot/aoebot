@@ -1,357 +1,470 @@
-/*
-aoebot uses a discord bot with token t to connect to your server and recreate the aoe2 chat experience
-Inspired by and modeled after github.com/hammerandchisel/airhornbot
-*/
-package main
+package aoebot
 
 import (
+	"errors"
 	"fmt"
-	"github.com/bwmarrin/discordgo"
+	"io"
 	"log"
-	"os"
+	"strings"
+	"sync"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
+	dgv "github.com/jeffreymkabot/aoebot/discordvoice"
 )
 
-const (
-	// MaxVoiceQueue is the maximum number of voice payloads that can wait to be processed for a particular guild
-	MaxVoiceQueue = 100
-	// InitUnhandlers initial size of the list of event handler removers for a bot session
-	InitUnhandlers = 10
-	mainChannelID  = "140142172979724288"
-	memesChannelID = "305119943995686913"
-	willowID       = "140136792849514496"
-	shyronnieID    = "140898747264663552"
-)
+// ErrQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit
+var ErrQuit = errors.New("Dispatched a quit action")
+
+// ErrForceQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit immediately
+var ErrForceQuit = errors.New("Dispatched a force quit action")
+
+type Config struct {
+	Prefix                     string
+	HelpThumbnail              string `toml:"help_thumbnail"`
+	MaxManagedConditions       int    `toml:"max_managed_conditions"`
+	MaxManagedVoiceDuration    int    `toml:"max_managed_voice_duration"`
+	MaxManagedChannels         int    `toml:"max_managed_channels"`
+	ManagedChannelPollInterval int    `toml:"managed_channel_poll_interval"`
+	Voice                      dgv.VoiceConfig
+}
+
+var DefaultConfig = Config{
+	Prefix:                     "@!",
+	MaxManagedConditions:       20,
+	MaxManagedVoiceDuration:    5,
+	MaxManagedChannels:         5,
+	ManagedChannelPollInterval: 60,
+	Voice: dgv.VoiceConfig{
+		QueueLength: 100,
+		SendTimeout: 1000,
+		AfkTimeout:  300,
+	},
+}
 
 // Bot represents a discord bot
 type Bot struct {
-	token      string
+	mu         sync.Mutex // TODO synchronize state and use of maps
+	kill       chan struct{}
+	killer     error
+	Config     Config
+	log        *log.Logger
+	mongo      string
 	owner      string
-	session    *discordgo.Session
+	commands   []Command
+	Driver     *Driver
+	Session    *discordgo.Session
 	self       *discordgo.User
-	unhandlers []func()
-	voiceboxes map[string]*voicebox // TODO voiceboxes is vulnerable to concurrent read/write
-	occupancy  map[string]string    // TODO occupancy is vulnerable to concurrent read/write
+	routines   map[*func()]struct{}     // Set
+	unhandlers map[*func()]struct{}     // Set
+	voiceboxes map[string]*voicebox     // TODO voiceboxes is vulnerable to concurrent read/write
+	occupancy  map[string]string        // TODO occupancy is vulnerable to concurrent read/write
 	aesthetic  bool
 }
 
-// Voicebox
-// voice data for a particular guild gets sent to the queue in its corresponding voicebox
-type voicebox struct {
-	guild *discordgo.Guild
-	queue chan<- *voicePayload
-	quit  chan<- struct{}
-}
-
-// NewBot initializes a bot
-func NewBot(token string, owner string) *Bot {
-	b := &Bot{
-		token:      token,
+// New initializes a bot
+func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err error) {
+	b = &Bot{
+		kill:       make(chan struct{}),
+		Config:     DefaultConfig,
+		log:        log,
+		mongo:      mongo,
 		owner:      owner,
-		unhandlers: make([]func(), InitUnhandlers),
+		routines:   make(map[*func()]struct{}),
+		unhandlers: make(map[*func()]struct{}),
 		voiceboxes: make(map[string]*voicebox),
 		occupancy:  make(map[string]string),
 	}
-	return b
+	b.Session, err = discordgo.New("Bot " + token)
+	if err != nil {
+		return
+	}
+	b.commands = []Command{
+		&Help{},
+		&Reconnect{},
+		&Restart{},
+		&Shutdown{},
+	}
+	return
 }
 
-// Sleep closes the discord session, removes event handlers, and stops all associated workers.
-func (b *Bot) Sleep() {
+// WithConfig writes a new config struct
+func (b *Bot) WithConfig(cfg Config) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.Config = cfg
+}
+
+func (b *Bot) AddCommand(c Command) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.commands = append(b.commands, c)
+}
+
+// modeled after default package context
+func (b *Bot) Die(err error) {
+	if err == nil {
+		panic("calls to Bot.die require a non-nil error")
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.killer != nil {
+		return
+	}
+	b.killer = err
+	close(b.kill)
+}
+
+// Killed returns a channel that is closed when the bot recieves an internal signal to terminate.
+// Clients using the bot *should* respect the signal and stop trying to use it
+// modeled after default package context
+func (b *Bot) Killed() <-chan struct{} {
+	return b.kill
+}
+
+// Killer returns an error message that is non-nil once the bot receives an internal signal to terminate
+// modeled after default package context
+func (b *Bot) Killer() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.killer
+}
+
+// Start initiates a database session and a discord session
+func (b *Bot) Start() (err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.Driver, err = newDriver(b.mongo)
+	if err != nil {
+		return
+	}
+
+	b.self, err = b.Session.User("@me")
+	if err != nil {
+		return
+	}
+
+	b.addHandlerOnce(b.onReady())
+
+	// begin listen to discord websocket for events
+	// invoking session.Open() triggers the discord ready event
+	err = b.Session.Open()
+	if err != nil {
+		return
+	}
+	return
+}
+
+// Stop removes event handlers, stops all workers, closes the discord session, and closes the db session.
+func (b *Bot) Stop() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	log.Printf("Closing session...")
 
-	b.session.Close()
-
-	for _, f := range b.unhandlers {
+	log.Printf("Disabling event handlers...")
+	for f := range b.unhandlers {
 		if f != nil {
-			f()
+			(*f)()
 		}
+		delete(b.unhandlers, f)
 	}
-	b.unhandlers = b.unhandlers[len(b.unhandlers):]
 
+	log.Printf("Closing botroutines...")
+	for f := range b.routines {
+		if f != nil{
+			(*f)()
+		}
+		delete(b.routines, f)
+	}
+
+	log.Printf("Closing voiceboxes...")
 	for k, vb := range b.voiceboxes {
-		vb.quit <- struct{}{}
+		vb.close()
 		delete(b.voiceboxes, k)
 	}
 
-	b.session = nil
+	// close the session after closing voice boxes since closing voiceboxes attempts graceful voiceconnection disconnect using discord session
+	log.Printf("Closing discord...")
+	b.Session.Close()
+
+	log.Printf("Closing mongo...")
+	b.Driver.Close()
 
 	log.Printf("...closed session.")
-}
-
-// Wakeup initiates a new discord session
-// Closes any session that may already exist
-func (b *Bot) Wakeup() (err error) {
-	if b.session != nil {
-		b.Sleep()
-	}
-	b.session, err = discordgo.New("Bot " + b.token)
-	if err != nil {
-		return
-	}
-
-	b.self, err = b.session.User("@me")
-	if err != nil {
-		return
-	}
-
-	b.addHandlerOnce(onReady)
-	// begin listen to discord websocket for events
-	// invoking session.Open() triggers the discord ready event
-	err = b.session.Open()
-
-	return
-}
-
-// Die kills the bot
-func (b *Bot) Die() {
-	b.Sleep()
-	log.Printf("Quit.")
-	os.Exit(0)
-}
-
-// Add an event handler to the discord session and retain a reference to the handler remover
-func (b *Bot) addHandler(handler interface{}) {
-	unhandler := b.session.AddHandler(handler)
-	b.unhandlers = append(b.unhandlers, unhandler)
-}
-
-// Add a one-time event handler to the discord session and retain a reference to the handler remover
-func (b *Bot) addHandlerOnce(handler interface{}) {
-	unhandler := b.session.AddHandlerOnce(handler)
-	b.unhandlers = append(b.unhandlers, unhandler)
-}
-
-func onReady(s *discordgo.Session, r *discordgo.Ready) {
-	log.Printf("Ready: %#v\n", r)
-	time.Sleep(100 * time.Millisecond)
-	for _, g := range r.Guilds {
-		// exec independent per each guild g
-		me.voiceboxes[g.ID] = me.connectVoicebox(g)
-		for _, vs := range g.VoiceStates {
-			me.occupancy[vs.UserID] = vs.ChannelID
-		}
-	}
-	me.addHandler(onMessageCreate)
-	me.addHandler(onVoiceStateUpdate)
-}
-
-// dispatch voice data to a particular discord guild
-// listen to a queue of voicePayloads for that guild
-// voicePayloads provide data meant for a voice channel in a discord guild
-// we can remain connected to the same channel while we process a relatively contiguous stream of voicePayloads
-// for that channel
-func (b *Bot) connectVoicebox(g *discordgo.Guild) *voicebox {
-	var vc *discordgo.VoiceConnection
-	var err error
-
-	// afk after a certain amount of time not talking
-	var afkTimer *time.Timer
-	// disconnect voice after a certain amount of time afk
-	var dcTimer *time.Timer
-
-	// disconnect() and goAfk() get invoked as the function arg in time.AfterFunc()
-	// need to use closures so they can manipulate same VoiceConnection vc used in speakTo()
-	disconnect := func() {
-		if vc != nil {
-			log.Printf("Disconnect voice in guild %v %v", g.Name, g.ID)
-			_ = vc.Speaking(false)
-			_ = vc.Disconnect()
-			vc = nil
-		}
-	}
-	goAfk := func() {
-		log.Printf("Join afk channel %v in guild %v %v", g.AfkChannelID, g.Name, g.ID)
-		vc, err = b.session.ChannelVoiceJoin(g.ID, g.AfkChannelID, true, true)
-		if err != nil {
-			log.Printf("Error join afk: %#v", err)
-			disconnect()
-		} else {
-			dcTimer = time.AfterFunc(1*time.Minute, disconnect)
-		}
-	}
-	// defer goAfk()
-	queue := make(chan *voicePayload, MaxVoiceQueue)
-	quit := make(chan struct{})
-
-	go func() {
-		for {
-			select {
-			case vp := <-queue:
-				if afkTimer != nil {
-					afkTimer.Stop()
-				}
-				if dcTimer != nil {
-					dcTimer.Stop()
-				}
-				log.Printf("Speak to channel %v in guild %v %v", vp.channelID, g.Name, g.ID)
-				vc, err = b.session.ChannelVoiceJoin(g.ID, vp.channelID, false, true)
-				if err != nil {
-					log.Printf("Error join channel: %#v\n", err)
-					afkTimer = time.AfterFunc(300*time.Millisecond, goAfk)
-					break
-				}
-				_ = vc.Speaking(true)
-				time.Sleep(100 * time.Millisecond)
-				for _, sample := range vp.buffer {
-					vc.OpusSend <- sample
-				}
-				time.Sleep(100 * time.Millisecond)
-				_ = vc.Speaking(false)
-				afkTimer = time.AfterFunc(300*time.Millisecond, goAfk)
-			case <-quit:
-				if afkTimer != nil {
-					afkTimer.Stop()
-				}
-				if dcTimer != nil {
-					dcTimer.Stop()
-				}
-				log.Printf("Quit voice in guild %v %v", g.Name, g.ID)
-				disconnect()
-				return
-			}
-		}
-	}()
-
-	return &voicebox{
-		guild: g,
-		queue: queue,
-		quit:  quit,
-	}
-}
-
-// TODO voice worker pipeline instead of voicebox god function?
-func (b Bot) newVoiceWorker(g *discordgo.Guild) *voicebox {
-	return nil
-}
-
-func (b *Bot) reconnectVoicebox(g *discordgo.Guild) (err error) {
-	// TODO synchronize connect with end of quit
-	vb, ok := b.voiceboxes[g.ID]
-	if ok {
-		vb.quit <- struct{}{}
-	}
-	b.voiceboxes[g.ID] = b.connectVoicebox(g)
-	return
-}
-
-// Say some audio frames to a guild
-// Say drops the payload if the voicebox queue is full
-func (b *Bot) Say(vp *voicePayload, guildID string) (err error) {
-	vb, ok := b.voiceboxes[guildID]
-	if ok {
-		select {
-		case vb.queue <- vp:
-		default:
-			err = fmt.Errorf("Full voicebox in guild %v %v", vb.guild.Name, vb.guild.ID)
-		}
-	} else {
-		err = fmt.Errorf("No voicebox registered for guild id %v", guildID)
-	}
-	return
 }
 
 // Write a message to a channel in a guild
 func (b *Bot) Write(channelID string, message string, tts bool) (err error) {
 	if tts {
-		_, err = b.session.ChannelMessageSendTTS(channelID, message)
+		_, err = b.Session.ChannelMessageSendTTS(channelID, message)
 	} else {
-		_, err = b.session.ChannelMessageSend(channelID, message)
+		_, err = b.Session.ChannelMessageSend(channelID, message)
 	}
 	return
 }
 
 // React with an emoji to a message in a channel in a guild
-func (b *Bot) React(channelID string, messageID string, emoji string) (err error) {
-	err = b.session.MessageReactionAdd(channelID, messageID, emoji)
+// Returns a function to remove the reaction
+func (b *Bot) React(channelID string, messageID string, emoji string) (unreact func() error, err error) {
+	unreact = func() error {
+		return nil
+	}
+	err = b.Session.MessageReactionAdd(channelID, messageID, emoji)
+	if err == nil {
+		unreact = func() error {
+			return b.Session.MessageReactionRemove(channelID, messageID, emoji, "@me")
+		}
+	}
 	return
 }
 
-// Listen to some audio frames in a guild
-// TODO
-func (b *Bot) Listen() (err error) {
-	return nil
+// Say some audio frames to a channel in a guild
+// Say drops the payload when the voicebox for that guild queue is full
+func (b *Bot) Say(guildID string, channelID string, reader io.Reader) (err error) {
+	if vb, ok := b.voiceboxes[guildID]; ok && vb != nil && vb.queue != nil {
+		vp := &dgv.Payload{
+			Reader:    reader,
+			ChannelID: channelID,
+		}
+		select {
+		case vb.queue <- vp:
+		default:
+			err = fmt.Errorf("Full voice queue in guild %v", guildID)
+		}
+	} else {
+		err = fmt.Errorf("No voicebox registered for guild %v", guildID)
+	}
+	return
 }
 
-// Create a context around a voice state when the bot sees a new text message
-// Perform any actions that match that context
-func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	log.Printf("Saw a message: %#v\n", m.Message)
-	ctx, err := NewContext(m.Message)
+// helper func
+func (b *Bot) sayToUserInGuild(guild *discordgo.Guild, userID string, reader io.Reader) (err error) {
+	for _, vs := range guild.VoiceStates {
+		if vs.UserID == userID {
+			return b.Say(guild.ID, vs.ChannelID, reader)
+		}
+	}
+	err = fmt.Errorf("Couldn't find user %v in a voice channel in guild %v", userID, guild.ID)
+	return
+}
+
+// Add an event handler to the discord session and retain a reference to the handler remover
+func (b *Bot) addHandler(handler interface{}) {
+	unhandler := b.Session.AddHandler(handler)
+	b.unhandlers[&unhandler] = struct{}{}
+}
+
+// Add a one-time event handler to the discord session and retain a reference to the handler remover
+func (b *Bot) addHandlerOnce(handler interface{}) {
+	unhandler := b.Session.AddHandlerOnce(handler)
+	b.unhandlers[&unhandler] = struct{}{}
+}
+
+// IsOwnEnvironment is true when an environment's seed is the result of the bot's own actions/behavior
+// This is useful to prevent the bot from reacting to itself
+func (b *Bot) IsOwnEnvironment(env *Environment) bool {
+	return env.Author != nil && env.Author.ID == b.self.ID
+}
+
+type botroutine func(<-chan struct{})
+
+func newRoutine(f botroutine) func() {
+	quit := make(chan struct{})
+	close := func() {
+		select {
+		case <-quit:
+			return
+		default:
+			close(quit)
+		}
+	}
+	go f(quit)
+	return close
+}
+
+func (b *Bot) AddRoutine(f func(<-chan struct{})) func() {
+	closer := newRoutine(f)
+	b.routines[&closer] = struct{}{}
+	return closer
+}
+
+// channel's fields must be exported to be visible to bson.Marshal
+// currently only needs ID and GuildID from *discordgo.Channel, but may be convenient to just take everything
+// channel itself does not need to be exported
+type channel struct {
+	IsOpen  bool
+	Users   int
+	Channel *discordgo.Channel
+}
+
+// ChannelOption is a functional option used as a variadic parameter to AddManagedVoiceChannel
+type ChannelOption func(*channel)
+
+// ChannelOpenMic sets whether the discord channel will override the UserVoiceActivity permission
+func ChannelOpenMic(b bool) ChannelOption {
+	return func(ch *channel) {
+		ch.IsOpen = b
+	}
+}
+
+// ChannelUsers sets whether the discord channel will have a user limit
+// values for n that are less than 1 or greater than 99 will have no effect
+func ChannelUsers(n int) ChannelOption {
+	return func(ch *channel) {
+		if 0 < n && n < 100 {
+			ch.Users = n
+		}
+	}
+}
+
+// AddManagedVoiceChannel creates a new voice channel in a guild
+// The voice channel will be polled periodically and deleted if it is found to be empty
+func (b *Bot) AddManagedVoiceChannel(guildID string, name string, options ...ChannelOption) (err error) {
+	var ch channel
+	for _, opt := range options {
+		opt(&ch)
+	}
+
+	ch.Channel, err = b.Session.GuildChannelCreate(guildID, name, "voice")
 	if err != nil {
-		log.Printf("Error resolving message context: %v", err)
 		return
 	}
-	if ctx.IsOwnContext() {
+	log.Printf("created new discord channel %#v", ch.Channel)
+
+	delete := func(ch channel) {
+		log.Printf("Deleting channel %v", ch.Channel.Name)
+		b.Session.ChannelDelete(ch.Channel.ID)
+		b.Driver.ChannelDelete(ch.Channel.ID)
+	}
+	err = b.Driver.ChannelAdd(ch)
+	if err != nil {
+		delete(ch)
 		return
 	}
 
-	for _, c := range conditions {
-		if c.trigger(ctx) {
-			// shadow c in the closure of the goroutine
-			go func(c condition) {
-				defer func() {
-					if err := recover(); err != nil {
-						log.Printf("Recovered from panic in perform %T on message create: %v", c.response, err)
-					}
-				}()
-				log.Printf("Perform %T on message create: %v", c.response, c.response)
-				err := c.response.perform(ctx)
-				if err != nil {
-					log.Printf("Error in perform %T on message create: %v", c.response, err)
+	isEmpty := func(ch channel) bool {
+		g, err := b.Session.State.Guild(ch.Channel.GuildID)
+		if err == nil {
+			for _, v := range g.VoiceStates {
+				if v.ChannelID == ch.Channel.ID {
+					return false
 				}
-			}(c)
+			}
+		}
+		return true
+	}
+	interval := time.Duration(b.Config.ManagedChannelPollInterval) * time.Second
+
+	b.AddRoutine(channelManager(ch, delete, isEmpty, interval))
+
+	if ch.IsOpen {
+		err = b.Session.ChannelPermissionSet(ch.Channel.ID, ch.Channel.GuildID, "role", discordgo.PermissionVoiceUseVAD, 0)
+		if err != nil {
+			delete(ch)
+			return
 		}
 	}
+	if ch.Users > 0 {
+		data := struct {
+			UserLimit int `json:"user_limit"`
+		}{ch.Users}
+		_, err = b.Session.RequestWithBucketID("PATCH", discordgo.EndpointChannel(ch.Channel.ID), data, discordgo.EndpointChannel(ch.Channel.ID))
+		if err != nil {
+			delete(ch)
+			return
+		}
+	}
+	return
 }
 
-// Create a context around a voice state when the bot sees someone's voice channel change
-// Perform any actions that match that context
-func onVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
-	log.Printf("Saw a voice state update: %#v\n", v.VoiceState)
-	userID := v.VoiceState.UserID
-	channelID := v.VoiceState.ChannelID
-
-	if me.occupancy[userID] != channelID {
-		// concurrent write vulnerability here
-		me.occupancy[userID] = channelID
-		if channelID == "" {
-			return
-		}
-
-		ctx, err := NewContext(v.VoiceState)
-		if err != nil {
-			log.Printf("Error resolving message context: %v", err)
-			return
-		}
-		if ctx.IsOwnContext() {
-			return
-		}
-
-		for _, c := range conditions {
-			if c.trigger(ctx) {
-				// shadow c because it changes in the closure via for loop
-				go func(c condition) {
-					defer func() {
-						if err := recover(); err != nil {
-							log.Printf("Recovered from panic in perform %T on voice state update: %v", c.response, err)
-						}
-					}()
-					log.Printf("Perform %T on voice state update: %v", c.response, c.response)
-					err := c.response.perform(ctx)
-					if err != nil {
-						log.Printf("Error in perform %T on voice state update: %v", c.response, err)
-					}
-				}(c)
+// channelManager returns a botroutine that periodically polls a channel and deletes it if its empty
+// isEmpty must return true if the channel is already deleted
+// delete should not panic if the channel is already deleted
+func channelManager(ch channel, delete func(ch channel), isEmpty func(ch channel) bool, pollInterval time.Duration) botroutine {
+	return func(quit <-chan struct{}) {
+		for {
+			select {
+			case <-quit:
+				return
+			case <-time.After(pollInterval):
+				if isEmpty(ch) {
+					delete(ch)
+					return
+				}
 			}
 		}
 	}
-	return
 }
 
-// func (g discordgo.Guild) String() string {
-// 	return fmt.Sprintf("%v %v", g.Name, g.ID)
-// }
+type voicebox struct {
+	queue chan<- *dgv.Payload
+	close func()
+}
 
-// func (c discordgo.Channel) String() string {
-// 	return fmt.Sprintf("%v %v", c.Name, c.ID)
-// }
+// speakTo opens the conversation with a discord guild
+func (b *Bot) speakTo(g *discordgo.Guild) {
+	vb, ok := b.voiceboxes[g.ID]
+	if ok {
+		vb.close()
+	}
+	ql := dgv.QueueLength(b.Config.Voice.QueueLength)
+	st := dgv.SendTimeout(b.Config.Voice.SendTimeout)
+	at := dgv.AfkTimeout(b.Config.Voice.AfkTimeout)
+	c, f := dgv.Connect(b.Session, g, ql, st, at)
+	b.voiceboxes[g.ID] = &voicebox{
+		queue: c,
+		close: f,
+	}
+}
+
+func (b *Bot) command(args []string) (Command, []string) {
+	if len(args) > 0 {
+		cmd := strings.ToLower(args[0])
+		args := args[1:]
+		for _, c := range b.commands {
+			if c.Name() == cmd {
+				return c, args
+			}
+		}
+	}
+	return &Help{}, []string{}
+}
+
+func (b *Bot) exec(env *Environment, cmd Command, args []string) {
+	if cmd.IsOwnerOnly() && env.Author.ID != b.owner {
+		_ = b.Write(env.TextChannel.ID, "Sorry, only dad can use that one 🙃", false)
+		return
+	}
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("Recovered from panic in exec %v with %v: %v", cmd.Name(), args, err)
+		}
+	}()
+
+	err := cmd.Run(env, args)
+	if err != nil {
+		log.Printf("Error in exec %v with %v: %v", cmd.Name(), args, err)
+		_ = b.Write(env.TextChannel.ID, fmt.Sprintf("🤔...\n%v", err), false)
+		return
+	}
+}
+
+func (b *Bot) dispatch(env *Environment, actions ...Action) {
+	for _, a := range actions {
+		// shadow a in the goroutine
+		// a iterates through for loop goroutine would otherwise try to use it in closure asynchronously
+		go func(a Action) {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Printf("Recovered from panic in perform %T on %v: %v", a, env.Type, err)
+				}
+			}()
+			log.Printf("Perform %T on %v: %v", a, env.Type, a)
+			err := a.Perform(env)
+			if err != nil {
+				log.Printf("Error in perform %T on %v: %v", a, env.Type, err)
+			}
+		}(a)
+	}
+}
