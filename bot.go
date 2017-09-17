@@ -38,7 +38,7 @@ var DefaultConfig = Config{
 	Voice: dgv.VoiceConfig{
 		QueueLength: 100,
 		SendTimeout: 1000,
-		AfkTimeout:  300,
+		IdleTimeout:  300,
 	},
 }
 
@@ -410,8 +410,8 @@ func (b *Bot) speakTo(g *discordgo.Guild) {
 	}
 	ql := dgv.QueueLength(b.Config.Voice.QueueLength)
 	st := dgv.SendTimeout(b.Config.Voice.SendTimeout)
-	at := dgv.AfkTimeout(b.Config.Voice.AfkTimeout)
-	c, f := dgv.Connect(b.Session, g, ql, st, at)
+	at := dgv.IdleTimeout(b.Config.Voice.IdleTimeout)
+	c, f := dgv.Connect(b.Session, g.ID, g.AfkChannelID, ql, st, at)
 	b.voiceboxes[g.ID] = &voicebox{
 		queue: c,
 		close: f,

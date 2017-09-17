@@ -13,13 +13,13 @@ import (
 type VoiceConfig struct {
 	QueueLength int `toml:"queue_length"`
 	SendTimeout int `toml:"send_timeout"`
-	AfkTimeout  int `toml:"afk_timeout"`
+	IdleTimeout  int `toml:"afk_timeout"`
 }
 
 var DefaultConfig = VoiceConfig{
 	QueueLength: 100,
 	SendTimeout: 1000,
-	AfkTimeout:  300,
+	IdleTimeout:  300,
 }
 
 // Payload
@@ -46,10 +46,10 @@ func SendTimeout(n int) VoiceOption {
 	}
 }
 
-func AfkTimeout(n int) VoiceOption {
+func IdleTimeout(n int) VoiceOption {
 	return func(cfg *VoiceConfig) {
 		if n > 0 {
-			cfg.AfkTimeout = n
+			cfg.IdleTimeout = n
 		}
 	}
 }
@@ -58,7 +58,7 @@ func AfkTimeout(n int) VoiceOption {
 // Queue
 // Close
 // Since discord allows only one voice connection per guild, you should call close before calling connect again for the same guild
-func Connect(s *discordgo.Session, g *discordgo.Guild, opts ...VoiceOption) (chan<- *Payload, func()) {
+func Connect(s *discordgo.Session, guildID string, idleChannelID string, opts ...VoiceOption) (chan<- *Payload, func()) {
 	cfg := DefaultConfig
 	for _, opt := range opts {
 		opt(&cfg)
@@ -80,15 +80,15 @@ func Connect(s *discordgo.Session, g *discordgo.Guild, opts ...VoiceOption) (cha
 	}
 
 	join := func(channelID string) (*discordgo.VoiceConnection, error) {
-		return s.ChannelVoiceJoin(g.ID, channelID, false, true)
+		return s.ChannelVoiceJoin(guildID, channelID, false, true)
 	}
 	// coerce queue and quit to receieve-only in payloadSender
-	go payloadSender(quit, queue, join, g.AfkChannelID, cfg.SendTimeout, cfg.AfkTimeout)
+	go payloadSender(quit, queue, join, idleChannelID, cfg.SendTimeout, cfg.IdleTimeout)
 	// coerce queue to send-only in voicebox
 	return queue, close
 }
 
-func payloadSender(quit <-chan struct{}, queue <-chan *Payload, join func(cID string) (*discordgo.VoiceConnection, error), afkChannelID string, sendTimeout int, afkTimeout int) {
+func payloadSender(quit <-chan struct{}, queue <-chan *Payload, join func(cID string) (*discordgo.VoiceConnection, error), idleChannelID string, sendTimeout int, idleTimeout int) {
 	if queue == nil || quit == nil {
 		return
 	}
@@ -102,7 +102,7 @@ func payloadSender(quit <-chan struct{}, queue <-chan *Payload, join func(cID st
 	var reader dca.OpusReader
 	var frame []byte
 
-	var afkTimer <-chan time.Time
+	var idleTimer <-chan time.Time
 
 	disconnect := func() {
 		if vc != nil {
@@ -113,7 +113,7 @@ func payloadSender(quit <-chan struct{}, queue <-chan *Payload, join func(cID st
 
 	defer disconnect()
 
-	vc, _ = join(afkChannelID)
+	vc, _ = join(idleChannelID)
 
 PayloadLoop:
 	for {
@@ -129,11 +129,11 @@ PayloadLoop:
 		select {
 		case <-quit:
 			return
-		// afktimer is started only once after each payload
-		// not every time we enter this select, to prevent repeatedly rejoining afk
-		case <-afkTimer:
-			log.Printf("Afk timeout in guild %v", vc.GuildID)
-			vc, err = join(afkChannelID)
+		// idletimer is started only once after each payload
+		// not every time we enter this select, to prevent repeatedly rejoining idle channel
+		case <-idleTimer:
+			log.Printf("idle timeout in guild %v", vc.GuildID)
+			vc, err = join(idleChannelID)
 			if err != nil {
 				disconnect()
 			}
@@ -144,7 +144,7 @@ PayloadLoop:
 			}
 		}
 
-		if vp.ChannelID == afkChannelID {
+		if vp.ChannelID == idleChannelID {
 			continue PayloadLoop
 		}
 		reader = dca.NewDecoder(vp.Reader)
@@ -184,6 +184,6 @@ PayloadLoop:
 			}
 		}
 		_ = vc.Speaking(false)
-		afkTimer = time.NewTimer(time.Duration(afkTimeout) * time.Millisecond).C
+		idleTimer = time.NewTimer(time.Duration(idleTimeout) * time.Millisecond).C
 	}
 }
