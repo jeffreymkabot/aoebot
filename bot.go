@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/jeffreymkabot/aoebot/discordvoice"
+	dgv "github.com/jeffreymkabot/aoebot/discordvoice"
 )
 
 // ErrQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit
@@ -26,7 +26,7 @@ type Config struct {
 	MaxManagedVoiceDuration    int    `toml:"max_managed_voice_duration"`
 	MaxManagedChannels         int    `toml:"max_managed_channels"`
 	ManagedChannelPollInterval int    `toml:"managed_channel_poll_interval"`
-	Voice                      discordvoice.VoiceConfig
+	Voice                      dgv.VoiceConfig
 }
 
 var DefaultConfig = Config{
@@ -35,7 +35,7 @@ var DefaultConfig = Config{
 	MaxManagedVoiceDuration:    5,
 	MaxManagedChannels:         5,
 	ManagedChannelPollInterval: 60,
-	Voice: discordvoice.VoiceConfig{
+	Voice: dgv.VoiceConfig{
 		QueueLength: 100,
 		SendTimeout: 1000,
 		AfkTimeout:  300,
@@ -55,7 +55,7 @@ type Bot struct {
 	Driver     *Driver
 	Session    *discordgo.Session
 	self       *discordgo.User
-	routines   map[*botroutine]struct{} // Set
+	routines   map[*func()]struct{}     // Set
 	unhandlers map[*func()]struct{}     // Set
 	voiceboxes map[string]*voicebox     // TODO voiceboxes is vulnerable to concurrent read/write
 	occupancy  map[string]string        // TODO occupancy is vulnerable to concurrent read/write
@@ -70,7 +70,7 @@ func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err
 		log:        log,
 		mongo:      mongo,
 		owner:      owner,
-		routines:   make(map[*botroutine]struct{}),
+		routines:   make(map[*func()]struct{}),
 		unhandlers: make(map[*func()]struct{}),
 		voiceboxes: make(map[string]*voicebox),
 		occupancy:  make(map[string]string),
@@ -171,9 +171,11 @@ func (b *Bot) Stop() {
 	}
 
 	log.Printf("Closing botroutines...")
-	for r := range b.routines {
-		r.close()
-		delete(b.routines, r)
+	for f := range b.routines {
+		if f != nil{
+			(*f)()
+		}
+		delete(b.routines, f)
 	}
 
 	log.Printf("Closing voiceboxes...")
@@ -221,7 +223,7 @@ func (b *Bot) React(channelID string, messageID string, emoji string) (unreact f
 // Say drops the payload when the voicebox for that guild queue is full
 func (b *Bot) Say(guildID string, channelID string, reader io.Reader) (err error) {
 	if vb, ok := b.voiceboxes[guildID]; ok && vb != nil && vb.queue != nil {
-		vp := &discordvoice.Payload{
+		vp := &dgv.Payload{
 			Reader:    reader,
 			ChannelID: channelID,
 		}
@@ -265,11 +267,9 @@ func (b *Bot) IsOwnEnvironment(env *Environment) bool {
 	return env.Author != nil && env.Author.ID == b.self.ID
 }
 
-type botroutine struct {
-	close func()
-}
+type botroutine func(<-chan struct{})
 
-func newRoutine(f func(<-chan struct{})) *botroutine {
+func newRoutine(f botroutine) func() {
 	quit := make(chan struct{})
 	close := func() {
 		select {
@@ -280,14 +280,13 @@ func newRoutine(f func(<-chan struct{})) *botroutine {
 		}
 	}
 	go f(quit)
-	return &botroutine{
-		close: close,
-	}
+	return close
 }
 
-func (b *Bot) AddRoutine(f func(<-chan struct{})) {
-	r := newRoutine(f)
-	b.routines[r] = struct{}{}
+func (b *Bot) AddRoutine(f func(<-chan struct{})) func() {
+	closer := newRoutine(f)
+	b.routines[&closer] = struct{}{}
+	return closer
 }
 
 // channel's fields must be exported to be visible to bson.Marshal
@@ -382,7 +381,7 @@ func (b *Bot) AddManagedVoiceChannel(guildID string, name string, options ...Cha
 // channelManager returns a botroutine that periodically polls a channel and deletes it if its empty
 // isEmpty must return true if the channel is already deleted
 // delete should not panic if the channel is already deleted
-func channelManager(ch channel, delete func(ch channel), isEmpty func(ch channel) bool, pollInterval time.Duration) func(quit <-chan struct{}) {
+func channelManager(ch channel, delete func(ch channel), isEmpty func(ch channel) bool, pollInterval time.Duration) botroutine {
 	return func(quit <-chan struct{}) {
 		for {
 			select {
@@ -399,21 +398,26 @@ func channelManager(ch channel, delete func(ch channel), isEmpty func(ch channel
 }
 
 type voicebox struct {
-	queue chan<- *discordvoice.Payload
+	queue chan<- *dgv.Payload
 	close func()
 }
 
 // speakTo opens the conversation with a discord guild
 func (b *Bot) speakTo(g *discordgo.Guild) {
+	b.mu.Lock()
 	vb, ok := b.voiceboxes[g.ID]
 	if ok {
 		vb.close()
 	}
-	c, f := discordvoice.Connect(b.Session, g, b.Config.Voice)
+	ql := dgv.QueueLength(b.Config.Voice.QueueLength)
+	st := dgv.SendTimeout(b.Config.Voice.SendTimeout)
+	at := dgv.AfkTimeout(b.Config.Voice.AfkTimeout)
+	c, f := dgv.Connect(b.Session, g, ql, st, at)
 	b.voiceboxes[g.ID] = &voicebox{
 		queue: c,
 		close: f,
 	}
+	b.mu.Unlock()
 }
 
 func (b *Bot) command(args []string) (Command, []string) {

@@ -16,22 +16,59 @@ type VoiceConfig struct {
 	AfkTimeout  int `toml:"afk_timeout"`
 }
 
+var DefaultConfig = VoiceConfig{
+	QueueLength: 100,
+	SendTimeout: 1000,
+	AfkTimeout:  300,
+}
+
 // Payload
 type Payload struct {
 	ChannelID string
 	Reader    io.Reader
 }
 
+type VoiceOption func(*VoiceConfig)
+
+func QueueLength(n int) VoiceOption {
+	return func(cfg *VoiceConfig) {
+		if n > 0 {
+			cfg.QueueLength = n
+		}
+	}
+}
+
+func SendTimeout(n int) VoiceOption {
+	return func(cfg *VoiceConfig) {
+		if n > 0 {
+			cfg.SendTimeout = n
+		}
+	}
+}
+
+func AfkTimeout(n int) VoiceOption {
+	return func(cfg *VoiceConfig) {
+		if n > 0 {
+			cfg.AfkTimeout = n
+		}
+	}
+}
+
 // Connect launches a goroutine that dispatches voice to a discord guild
 // Queue
 // Close
 // Since discord allows only one voice connection per guild, you should call close before calling connect again for the same guild
-func Connect(s *discordgo.Session, g *discordgo.Guild, cfg VoiceConfig) (chan<- *Payload, func()) {
-	queue := make(chan *Payload, cfg.QueueLength)
+func Connect(s *discordgo.Session, g *discordgo.Guild, opts ...VoiceOption) (chan<- *Payload, func()) {
+	cfg := DefaultConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	// close quit channel and all attempts to receive it will receive it without blocking
 	// quit channel is hidden from the outside world
-	// accessed only through closure for voicebox.close
+	// accessed only through closure for close func
 	quit := make(chan struct{})
+	queue := make(chan *Payload, cfg.QueueLength)
 	close := func() {
 		select {
 		case <-quit:
@@ -41,16 +78,17 @@ func Connect(s *discordgo.Session, g *discordgo.Guild, cfg VoiceConfig) (chan<- 
 			close(quit)
 		}
 	}
+
 	join := func(channelID string) (*discordgo.VoiceConnection, error) {
 		return s.ChannelVoiceJoin(g.ID, channelID, false, true)
 	}
 	// coerce queue and quit to receieve-only in payloadSender
-	go payloadSender(join, g.AfkChannelID, queue, quit, cfg.SendTimeout, cfg.AfkTimeout)
+	go payloadSender(quit, queue, join, g.AfkChannelID, cfg.SendTimeout, cfg.AfkTimeout)
 	// coerce queue to send-only in voicebox
 	return queue, close
 }
 
-func payloadSender(join func(channelID string) (*discordgo.VoiceConnection, error), afkChannelID string, queue <-chan *Payload, quit <-chan struct{}, sendTimeout int, afkTimeout int) {
+func payloadSender(quit <-chan struct{}, queue <-chan *Payload, join func(cID string) (*discordgo.VoiceConnection, error), afkChannelID string, sendTimeout int, afkTimeout int) {
 	if queue == nil || quit == nil {
 		return
 	}
