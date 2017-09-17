@@ -404,7 +404,6 @@ type voicebox struct {
 
 // speakTo opens the conversation with a discord guild
 func (b *Bot) speakTo(g *discordgo.Guild) {
-	b.mu.Lock()
 	vb, ok := b.voiceboxes[g.ID]
 	if ok {
 		vb.close()
@@ -417,7 +416,6 @@ func (b *Bot) speakTo(g *discordgo.Guild) {
 		queue: c,
 		close: f,
 	}
-	b.mu.Unlock()
 }
 
 func (b *Bot) command(args []string) (Command, []string) {
