@@ -93,6 +93,8 @@ func payloadSender(quit <-chan struct{}, queue <-chan *Payload, join func(cID st
 		return
 	}
 
+	log.Printf("ay lmao")
+
 	var vc *discordgo.VoiceConnection
 	var err error
 
@@ -144,9 +146,10 @@ PayloadLoop:
 			}
 		}
 
-		if vp.ChannelID == idleChannelID {
-			continue PayloadLoop
-		}
+		// if vp.ChannelID == idleChannelID {
+		// 	continue PayloadLoop
+		// }
+		
 		reader = dca.NewDecoder(vp.Reader)
 		vc, err = join(vp.ChannelID)
 		if err != nil {
