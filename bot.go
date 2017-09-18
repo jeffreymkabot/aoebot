@@ -411,9 +411,9 @@ func (b *Bot) speakTo(g *discordgo.Guild) {
 	ql := dgv.QueueLength(b.Config.Voice.QueueLength)
 	st := dgv.SendTimeout(b.Config.Voice.SendTimeout)
 	at := dgv.IdleTimeout(b.Config.Voice.IdleTimeout)
-	c, f := dgv.Connect(b.Session, g.ID, g.AfkChannelID, ql, st, at)
+	send, f := dgv.Connect(b.Session, g.ID, g.AfkChannelID, ql, st, at)
 	b.voiceboxes[g.ID] = &voicebox{
-		queue: c,
+		queue: send.Queue,
 		close: f,
 	}
 }
