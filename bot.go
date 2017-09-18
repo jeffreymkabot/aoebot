@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	dgv "github.com/jeffreymkabot/aoebot/discordvoice"
+	dgv "github.com/jeffreymkabot/discordvoice"
 )
 
 // ErrQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit
