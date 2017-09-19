@@ -38,7 +38,7 @@ var DefaultConfig = Config{
 	Voice: dgv.VoiceConfig{
 		QueueLength: 100,
 		SendTimeout: 1000,
-		IdleTimeout:  300,
+		IdleTimeout: 300,
 	},
 }
 
@@ -55,10 +55,10 @@ type Bot struct {
 	Driver     *Driver
 	Session    *discordgo.Session
 	self       *discordgo.User
-	routines   map[*func()]struct{}     // Set
-	unhandlers map[*func()]struct{}     // Set
-	voiceboxes map[string]*voicebox     // TODO voiceboxes is vulnerable to concurrent read/write
-	occupancy  map[string]string        // TODO occupancy is vulnerable to concurrent read/write
+	routines   map[*func()]struct{} // Set
+	unhandlers map[*func()]struct{} // Set
+	voiceboxes map[string]*voicebox // TODO voiceboxes is vulnerable to concurrent read/write
+	occupancy  map[string]string    // TODO occupancy is vulnerable to concurrent read/write
 	aesthetic  bool
 }
 
@@ -172,7 +172,7 @@ func (b *Bot) Stop() {
 
 	log.Printf("Closing botroutines...")
 	for f := range b.routines {
-		if f != nil{
+		if f != nil {
 			(*f)()
 		}
 		delete(b.routines, f)
@@ -224,8 +224,9 @@ func (b *Bot) React(channelID string, messageID string, emoji string) (unreact f
 func (b *Bot) Say(guildID string, channelID string, reader io.Reader) (err error) {
 	if vb, ok := b.voiceboxes[guildID]; ok && vb != nil && vb.queue != nil {
 		vp := &dgv.Payload{
-			Reader:    reader,
-			ChannelID: channelID,
+			DCAEncoded: true,
+			Reader:     reader,
+			ChannelID:  channelID,
 		}
 		select {
 		case vb.queue <- vp:
