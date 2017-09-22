@@ -55,10 +55,10 @@ type Bot struct {
 	Driver     *Driver
 	Session    *discordgo.Session
 	self       *discordgo.User
-	routines   map[*func()]struct{} // Set
-	unhandlers map[*func()]struct{} // Set
-	voiceboxes map[string]*voicebox // TODO voiceboxes is vulnerable to concurrent read/write
-	occupancy  map[string]string    // TODO occupancy is vulnerable to concurrent read/write
+	routines   map[*func()]struct{}   // Set
+	unhandlers map[*func()]struct{}   // Set
+	voiceboxes map[string]*dgv.Player // TODO voiceboxes is vulnerable to concurrent read/write
+	occupancy  map[string]string      // TODO occupancy is vulnerable to concurrent read/write
 	aesthetic  bool
 }
 
@@ -72,7 +72,7 @@ func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err
 		owner:      owner,
 		routines:   make(map[*func()]struct{}),
 		unhandlers: make(map[*func()]struct{}),
-		voiceboxes: make(map[string]*voicebox),
+		voiceboxes: make(map[string]*dgv.Player),
 		occupancy:  make(map[string]string),
 	}
 	b.Session, err = discordgo.New("Bot " + token)
@@ -179,8 +179,8 @@ func (b *Bot) Stop() {
 	}
 
 	log.Printf("Closing voiceboxes...")
-	for k, vb := range b.voiceboxes {
-		vb.close()
+	for k, player := range b.voiceboxes {
+		player.Quit()
 		delete(b.voiceboxes, k)
 	}
 
@@ -222,17 +222,13 @@ func (b *Bot) React(channelID string, messageID string, emoji string) (unreact f
 // Say some audio frames to a channel in a guild
 // Say drops the payload when the voicebox for that guild queue is full
 func (b *Bot) Say(guildID string, channelID string, reader io.Reader) (err error) {
-	if vb, ok := b.voiceboxes[guildID]; ok && vb != nil && vb.queue != nil {
+	if player, ok := b.voiceboxes[guildID]; ok && player != nil {
 		vp := &dgv.Payload{
-			DCAEncoded: true,
+			PreEncoded: true,
 			Reader:     reader,
 			ChannelID:  channelID,
 		}
-		select {
-		case vb.queue <- vp:
-		default:
-			err = fmt.Errorf("Full voice queue in guild %v", guildID)
-		}
+		err = player.Enqueue(vp)
 	} else {
 		err = fmt.Errorf("No voicebox registered for guild %v", guildID)
 	}
@@ -398,25 +394,16 @@ func channelManager(ch channel, delete func(ch channel), isEmpty func(ch channel
 	}
 }
 
-type voicebox struct {
-	queue chan<- *dgv.Payload
-	close func()
-}
-
 // speakTo opens the conversation with a discord guild
 func (b *Bot) speakTo(g *discordgo.Guild) {
-	vb, ok := b.voiceboxes[g.ID]
+	player, ok := b.voiceboxes[g.ID]
 	if ok {
-		vb.close()
+		player.Quit()
 	}
 	ql := dgv.QueueLength(b.Config.Voice.QueueLength)
 	st := dgv.SendTimeout(b.Config.Voice.SendTimeout)
 	at := dgv.IdleTimeout(b.Config.Voice.IdleTimeout)
-	send, f := dgv.Connect(b.Session, g.ID, g.AfkChannelID, ql, st, at)
-	b.voiceboxes[g.ID] = &voicebox{
-		queue: send.Queue,
-		close: f,
-	}
+	b.voiceboxes[g.ID] = dgv.Connect(b.Session, g.ID, g.AfkChannelID, ql, st, at)
 }
 
 func (b *Bot) command(args []string) (Command, []string) {
