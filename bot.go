@@ -26,7 +26,7 @@ type Config struct {
 	MaxManagedVoiceDuration    int    `toml:"max_managed_voice_duration"`
 	MaxManagedChannels         int    `toml:"max_managed_channels"`
 	ManagedChannelPollInterval int    `toml:"managed_channel_poll_interval"`
-	Voice                      dgv.VoiceConfig
+	Voice                      dgv.PlayerConfig
 }
 
 var DefaultConfig = Config{
@@ -35,7 +35,7 @@ var DefaultConfig = Config{
 	MaxManagedVoiceDuration:    5,
 	MaxManagedChannels:         5,
 	ManagedChannelPollInterval: 60,
-	Voice: dgv.VoiceConfig{
+	Voice: dgv.PlayerConfig{
 		QueueLength: 100,
 		SendTimeout: 1000,
 		IdleTimeout: 300,
@@ -223,12 +223,7 @@ func (b *Bot) React(channelID string, messageID string, emoji string) (unreact f
 // Say drops the payload when the voicebox for that guild queue is full
 func (b *Bot) Say(guildID string, channelID string, reader io.Reader) (err error) {
 	if player, ok := b.voiceboxes[guildID]; ok && player != nil {
-		vp := &dgv.Payload{
-			PreEncoded: true,
-			Reader:     reader,
-			ChannelID:  channelID,
-		}
-		err = player.Enqueue(vp)
+		_, err = player.Enqueue(channelID, "", dgv.PreEncoded(reader))
 	} else {
 		err = fmt.Errorf("No voicebox registered for guild %v", guildID)
 	}
