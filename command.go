@@ -133,7 +133,7 @@ func (r *Reconnect) Usage() string {
 }
 
 func (r *Reconnect) Short() string {
-	return `Refresh the voice worker for this guild`
+	return `Refresh the voice player for this guild`
 }
 
 func (r *Reconnect) Long() string {
@@ -141,7 +141,7 @@ func (r *Reconnect) Long() string {
 }
 
 func (r *Reconnect) IsOwnerOnly() bool {
-	return true
+	return false
 }
 
 func (r *Reconnect) Run(env *Environment, args []string) error {

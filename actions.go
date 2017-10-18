@@ -18,7 +18,7 @@ type ActionType string
 
 const (
 	write ActionType = "write"
-	voice ActionType = "say"
+	voice ActionType = "voice"
 	react ActionType = "react"
 )
 
@@ -63,12 +63,11 @@ func (ra ReactAction) String() string {
 
 // VoiceAction specifies audio that can be said to a voice channel
 type VoiceAction struct {
-	File   string
-	buffer [][]byte
+	File  string `bson:"file,omitempty"` 
+	Alias string `bson:"alias,omitempty"`
 }
 
 func (va VoiceAction) Perform(env *Environment) error {
-	// TODO could cache result of sa.load
 	r, err := va.load()
 	if err != nil {
 		return err
@@ -84,10 +83,10 @@ func (va VoiceAction) load() (io.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 
 	buf := bytes.NewBuffer([]byte{})
 	_, err = buf.ReadFrom(file)
+	file.Close()
 	return buf, err
 }
 
@@ -96,5 +95,8 @@ func (va VoiceAction) kind() ActionType {
 }
 
 func (va VoiceAction) String() string {
+	if va.Alias != "" {
+		return fmt.Sprintf("%v", va.Alias)
+	}
 	return fmt.Sprintf("%v", va.File)
 }

@@ -55,7 +55,7 @@ func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
 		return err
 	}
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild?
+		return errors.New("No guild")
 	}
 	if len(env.Bot.Driver.ConditionsGuild(env.Guild.ID)) >= env.Bot.Config.MaxManagedConditions {
 		return errors.New("I'm not allowed make any more memes in this guild")
@@ -157,7 +157,7 @@ func (a *DelReact) Run(env *aoebot.Environment, args []string) error {
 		return err
 	}
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild?
+		return errors.New("No guild")
 	}
 
 	argString := strings.Join(f.Args(), " ")

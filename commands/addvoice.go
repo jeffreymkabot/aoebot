@@ -15,6 +15,8 @@ import (
 	"github.com/jonas747/dca"
 )
 
+const voiceFilePath = "media/audio/%s.dca"
+
 var addvoiceCmdRegexp = regexp.MustCompile(`^on "(\S.*)"$`)
 
 type AddVoice struct{}
@@ -52,7 +54,6 @@ func (a *AddVoice) IsOwnerOnly() bool {
 
 func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 	f := flag.NewFlagSet(a.Name(), flag.ContinueOnError)
-	vol := f.Int("vol", dca.StdEncodeOptions.Volume, "volume")
 	filters := f.String("af", dca.StdEncodeOptions.AudioFilter, "ffmpeg filters")
 	err := f.Parse(args)
 	if err != nil {
@@ -60,7 +61,7 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 	}
 
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild?
+		return errors.New("No guild")
 	}
 	if len(env.Bot.Driver.ConditionsGuild(env.Guild.ID)) >= env.Bot.Config.MaxManagedConditions {
 		return errors.New("I'm not allowed make any more memes in this guild")
@@ -83,7 +84,7 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 	url := env.TextMessage.Attachments[0].URL
 	filename := env.TextMessage.Attachments[0].Filename
 	duration := time.Duration(env.Bot.Config.MaxManagedVoiceDuration) * time.Second
-	file, err := dcaFromURL(url, filename, duration, withVolume(*vol), withFilters(*filters))
+	file, err := dcaFromURL(url, filename, duration, withFilters(*filters))
 	if err != nil {
 		return err
 	}
@@ -93,6 +94,7 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 		Phrase:          phrase,
 		Action: aoebot.NewActionEnvelope(&aoebot.VoiceAction{
 			File: file.Name(),
+			Alias: filename,
 		}),
 	}
 
@@ -106,22 +108,18 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 
 type encodeOption func(*dca.EncodeOptions)
 
-func withVolume(vol int) encodeOption {
-	return func(enc *dca.EncodeOptions) {
-		enc.Volume = vol
-	}
-}
-
 func withFilters(filters string) encodeOption {
 	return func(enc *dca.EncodeOptions) {
-		enc.AudioFilter = filters
+		if strings.TrimSpace(filters) != "" {
+			enc.AudioFilter += ", " + filters
+		}
 	}
 }
 
-func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...encodeOption) (f *os.File, err error) {
+func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...encodeOption) (*os.File, error) {
 	resp, err := http.Get(url)
 	if err != nil {
-		return
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -131,12 +129,12 @@ func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...
 		FrameRate:        48000,
 		FrameDuration:    20,
 		Bitrate:          64,
-		RawOutput:        true,
 		Application:      dca.AudioApplicationAudio,
 		CompressionLevel: 10,
 		PacketLoss:       1,
 		BufferedFrames:   100,
 		VBR:              true,
+		AudioFilter:      "loudnorm=i=-28",
 	}
 	for _, opt := range options {
 		opt(encodeOptions)
@@ -144,35 +142,35 @@ func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...
 
 	encoder, err := dca.EncodeMem(resp.Body, encodeOptions)
 	if err != nil {
-		return
+		return nil, err
 	}
 	defer encoder.Cleanup()
 
-	f, err = os.Create(fmt.Sprintf("./media/audio/%s.dca", fname))
+	f, err := os.Create(fmt.Sprintf(voiceFilePath, fname))
 	if err != nil {
-		return
+		return nil, err
 	}
 	defer f.Close()
 
 	frameDuration := encoder.FrameDuration()
-	fileDuration := time.Duration(0)
 
 	// count frames to make sure we do not exceed the maximum allowed file size
 	var frame []byte
-	for ; fileDuration < maxDuration; fileDuration += frameDuration {
+	for fileDuration := time.Duration(0); fileDuration < maxDuration; fileDuration += frameDuration {
 		frame, err = encoder.ReadFrame()
 		if err != nil {
 			if err == io.EOF {
-				err = nil
+				return f, nil
 			}
-			return
+			return nil, err
 		}
+
 		_, err = f.Write(frame)
 		if err != nil {
-			return
+			return nil, err
 		}
 	}
-	return
+	return f, nil
 }
 
 var delvoiceCmdRegexp = regexp.MustCompile(`^"(\S.*)" on "(\S.*)"$`)
@@ -193,18 +191,18 @@ func (d *DelVoice) Short() string {
 
 func (d *DelVoice) Long() string {
 	return `Remove an automatic audio response created by addvoice.
-Files uploaded with addvoice are saved to a relative path and with a new file extension.
-The relative path and new file extension can be discovered with the getmemes command.
+Files uploaded with addvoice are saved with a new file extension.
+The file extension can be discovered with the getmemes command.
 Suppose there is a response created using the file "greenhillzone.wav" on the phrase "gotta go fast".
 The "getmemes" command will show:
-say ./media/audio/greenhillzone.wav.dca on "gotta go fast"
+say "greenhillzone.wav.dca" on "gotta go fast"
 This response can be deleted with:
-delvoice ./media/audio/greenhillzone.wav.dca on "gotta go fast"`
+delvoice "greenhillzone.wav.dca" on "gotta go fast"`
 }
 
 func (d *DelVoice) Examples() []string {
 	return []string{
-		`delvoice "./media/audiogreenhillzone.dca" on "gotta go fast"`,
+		`delvoice "greenhillzone.wav" on "gotta go fast"`,
 	}
 }
 
@@ -214,7 +212,7 @@ func (d *DelVoice) IsOwnerOnly() bool {
 
 func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild
+		return errors.New("No guild")
 	}
 
 	argString := strings.Join(args, " ")
@@ -238,7 +236,9 @@ func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 		GuildID:         env.Guild.ID,
 		Phrase:          phrase,
 		Action: aoebot.NewActionEnvelope(&aoebot.VoiceAction{
-			File: filename,
+			// TODO why does it need both ??
+			Alias: filename,
+			File: fmt.Sprintf(voiceFilePath, filename),
 		}),
 	}
 

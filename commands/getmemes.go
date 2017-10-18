@@ -34,7 +34,7 @@ func (g *GetMemes) IsOwnerOnly() bool {
 
 func (g *GetMemes) Run(env *aoebot.Environment, args []string) error {
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild?
+		return errors.New("No guild")
 	}
 	conds := env.Bot.Driver.ConditionsGuild(env.Guild.ID)
 	buf := &bytes.Buffer{}

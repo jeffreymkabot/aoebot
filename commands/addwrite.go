@@ -43,7 +43,7 @@ func (a *AddWrite) IsOwnerOnly() bool {
 
 func (a *AddWrite) Run(env *aoebot.Environment, args []string) error {
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild?
+		return errors.New("No guild")
 	}
 	if len(env.Bot.Driver.ConditionsGuild(env.Guild.ID)) >= env.Bot.Config.MaxManagedConditions {
 		return errors.New("I'm not allowed make any more memes in this guild")
@@ -112,7 +112,7 @@ func (d *DelWrite) IsOwnerOnly() bool {
 
 func (d *DelWrite) Run(env *aoebot.Environment, args []string) error {
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild?
+		return errors.New("No guild")
 	}
 
 	argString := strings.Join(args, " ")
