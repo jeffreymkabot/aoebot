@@ -93,7 +93,7 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 		GuildID:         env.Guild.ID,
 		Phrase:          phrase,
 		Action: aoebot.NewActionEnvelope(&aoebot.VoiceAction{
-			File: file.Name(),
+			File:  file.Name(),
 			Alias: filename,
 		}),
 	}
@@ -134,11 +134,15 @@ func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...
 		PacketLoss:       1,
 		BufferedFrames:   100,
 		VBR:              true,
-		AudioFilter:      "loudnorm=i=-28",
 	}
 	for _, opt := range options {
 		opt(encodeOptions)
 	}
+	// apply a limiter at the end of the signal chain
+	if encodeOptions.AudioFilter != "" {
+		encodeOptions.AudioFilter += ", "
+	}
+	encodeOptions.AudioFilter += "loudnorm=i=-28"
 
 	encoder, err := dca.EncodeMem(resp.Body, encodeOptions)
 	if err != nil {
@@ -238,7 +242,7 @@ func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 		Action: aoebot.NewActionEnvelope(&aoebot.VoiceAction{
 			// TODO why does it need both ??
 			Alias: filename,
-			File: fmt.Sprintf(voiceFilePath, filename),
+			File:  fmt.Sprintf(voiceFilePath, filename),
 		}),
 	}
 
@@ -246,6 +250,7 @@ func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 	if err != nil {
 		return err
 	}
+	
 	_ = env.Bot.Write(env.TextChannel.ID, `🗑️`, false)
 	return nil
 }
