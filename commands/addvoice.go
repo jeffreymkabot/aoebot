@@ -195,13 +195,9 @@ func (d *DelVoice) Short() string {
 
 func (d *DelVoice) Long() string {
 	return `Remove an automatic audio response created by addvoice.
-Files uploaded with addvoice are saved with a new file extension.
-The file extension can be discovered with the getmemes command.
 Suppose there is a response created using the file "greenhillzone.wav" on the phrase "gotta go fast".
-The "getmemes" command will show:
-say "greenhillzone.wav.dca" on "gotta go fast"
 This response can be deleted with:
-delvoice "greenhillzone.wav.dca" on "gotta go fast"`
+delvoice "greenhillzone.wav" on "gotta go fast"`
 }
 
 func (d *DelVoice) Examples() []string {
