@@ -111,7 +111,7 @@ type encodeOption func(*dca.EncodeOptions)
 func withFilters(filters string) encodeOption {
 	return func(enc *dca.EncodeOptions) {
 		if strings.TrimSpace(filters) != "" {
-			enc.AudioFilter += ", " + filters
+			enc.AudioFilter = filters
 		}
 	}
 }
