@@ -428,8 +428,9 @@ func (b *Bot) exec(env *Environment, cmd Command, args []string) {
 	err := cmd.Run(env, args)
 	if err != nil {
 		log.Printf("Error in exec %v with %v: %v", cmd.Name(), args, err)
-		_ = b.Write(env.TextChannel.ID, fmt.Sprintf("🤔...\n%v", err), false)
-		return
+		b.Write(env.TextChannel.ID, fmt.Sprintf("🤔...\n%v", err), false)
+	} else if cmdAck, ok := cmd.(CommandWithAck); ok && cmdAck.Ack(env) != "" {
+		b.React(env.TextChannel.ID, env.TextMessage.ID, cmdAck.Ack(env))
 	}
 }
 

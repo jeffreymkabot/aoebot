@@ -72,7 +72,7 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 
 	argString := strings.Join(f.Args(), " ")
 	if !addvoiceCmdRegexp.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"addvoice"})
+		return errors.New(a.Usage())
 	}
 	submatches := addvoiceCmdRegexp.FindStringSubmatch(argString)
 
@@ -98,12 +98,11 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 		}),
 	}
 
-	err = env.Bot.Driver.ConditionAdd(cond, env.Author.String())
-	if err != nil {
-		return err
-	}
-	_ = env.Bot.Write(env.TextChannel.ID, `+`, false)
-	return nil
+	return env.Bot.Driver.ConditionAdd(cond, env.Author.String())
+}
+
+func (a *AddVoice) Ack(env *aoebot.Environment) string {
+	return "✅"
 }
 
 type encodeOption func(*dca.EncodeOptions)
@@ -217,7 +216,7 @@ func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 
 	argString := strings.Join(args, " ")
 	if !delvoiceCmdRegexp.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"delvoice"})
+		return errors.New(d.Usage())
 	}
 	submatches := delvoiceCmdRegexp.FindStringSubmatch(argString)
 
@@ -242,11 +241,9 @@ func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 		}),
 	}
 
-	err := env.Bot.Driver.ConditionDelete(cond)
-	if err != nil {
-		return err
-	}
-	
-	_ = env.Bot.Write(env.TextChannel.ID, `🗑️`, false)
-	return nil
+	return env.Bot.Driver.ConditionDelete(cond)
+}
+
+func (a *DelVoice) Ack(env *aoebot.Environment) string {
+	return "🗑"
 }

@@ -51,7 +51,7 @@ func (a *AddWrite) Run(env *aoebot.Environment, args []string) error {
 
 	argString := strings.Join(args, " ")
 	if !writeCmdRegex.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"addwrite"})
+		return errors.New(a.Usage())
 	}
 	submatches := writeCmdRegex.FindStringSubmatch(argString)
 
@@ -74,12 +74,11 @@ func (a *AddWrite) Run(env *aoebot.Environment, args []string) error {
 		}),
 	}
 
-	err := env.Bot.Driver.ConditionAdd(cond, env.Author.String())
-	if err != nil {
-		return err
-	}
-	_ = env.Bot.Write(env.TextChannel.ID, `+`, false)
-	return nil
+	return env.Bot.Driver.ConditionAdd(cond, env.Author.String())
+}
+
+func (a *AddWrite) Ack(env *aoebot.Environment) string {
+	return "✅"
 }
 
 type DelWrite struct{}
@@ -117,7 +116,7 @@ func (d *DelWrite) Run(env *aoebot.Environment, args []string) error {
 
 	argString := strings.Join(args, " ")
 	if !writeCmdRegex.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"delwrite"})
+		return errors.New(d.Usage())
 	}
 	submatches := writeCmdRegex.FindStringSubmatch(argString)
 
@@ -140,10 +139,9 @@ func (d *DelWrite) Run(env *aoebot.Environment, args []string) error {
 		}),
 	}
 
-	err := env.Bot.Driver.ConditionDelete(cond)
-	if err != nil {
-		return err
-	}
-	_ = env.Bot.Write(env.TextChannel.ID, `🗑️`, false)
-	return nil
+	return env.Bot.Driver.ConditionDelete(cond)
+}
+
+func (a *DelWrite) Ack(env *aoebot.Environment) string {
+	return "🗑"
 }

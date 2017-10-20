@@ -68,3 +68,7 @@ func (ac *AddChannel) Run(env *aoebot.Environment, args []string) error {
 
 	return env.Bot.AddManagedVoiceChannel(env.Guild.ID, chName, aoebot.ChannelOpenMic(*isOpen), aoebot.ChannelUsers(*userLimit))
 }
+
+func (ac *AddChannel) Ack(env *aoebot.Environment) string {
+	return "✅"
+}

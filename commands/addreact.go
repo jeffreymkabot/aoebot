@@ -63,7 +63,7 @@ func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
 
 	argString := strings.Join(f.Args(), " ")
 	if !reactCmdRegex.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"addreact"})
+		 return errors.New(a.Usage())
 	}
 	submatches := reactCmdRegex.FindStringSubmatch(argString)
 
@@ -118,6 +118,10 @@ func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
 	return nil
 }
 
+func (a *AddReact) Ack(env *aoebot.Environment) string {
+	return "✅"
+}
+
 type DelReact struct{}
 
 func (a *DelReact) Name() string {
@@ -162,7 +166,7 @@ func (a *DelReact) Run(env *aoebot.Environment, args []string) error {
 
 	argString := strings.Join(f.Args(), " ")
 	if !reactCmdRegex.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"delreact"})
+		return errors.New(a.Usage())
 	}
 	submatches := reactCmdRegex.FindStringSubmatch(argString)
 
@@ -198,10 +202,9 @@ func (a *DelReact) Run(env *aoebot.Environment, args []string) error {
 		cond.Phrase = strings.ToLower(phrase)
 	}
 
-	err = env.Bot.Driver.ConditionDelete(cond)
-	if err != nil {
-		return err
-	}
-	_ = env.Bot.Write(env.TextChannel.ID, `🗑️`, false)
-	return nil
+	return env.Bot.Driver.ConditionDelete(cond)
+}
+
+func (a *DelReact) Ack(env *aoebot.Environment) string {
+	return "🗑"
 }

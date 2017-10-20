@@ -30,8 +30,9 @@ type Environment struct {
 }
 
 // NewEnvironment creates a new environment based on a seed event/trigger
-func NewEnvironment(b *Bot, seed interface{}) (env *Environment, err error) {
-	env = &Environment{
+func NewEnvironment(b *Bot, seed interface{}) (*Environment, error) {
+	var err error
+	env := &Environment{
 		Bot: b,
 	}
 	switch s := seed.(type) {
@@ -41,31 +42,33 @@ func NewEnvironment(b *Bot, seed interface{}) (env *Environment, err error) {
 		env.Author = s.Author
 		env.TextChannel, err = b.Session.State.Channel(s.ChannelID)
 		if err != nil {
-			return
+			return nil, err
 		}
-		env.Guild, err = b.Session.State.Guild(env.TextChannel.GuildID)
-		if err != nil {
-			return
+		if env.TextChannel.Type == discordgo.ChannelTypeGuildText {
+			env.Guild, err = b.Session.State.Guild(env.TextChannel.GuildID)
+			if err != nil {
+				return nil, err
+			}
 		}
 	case *discordgo.VoiceState:
 		env.Type = Voicestate
 		env.Author, err = b.Session.User(s.UserID)
 		if err != nil {
-			return
+			return nil, err
 		}
 		env.VoiceChannel, err = b.Session.State.Channel(s.ChannelID)
 		if err != nil {
-			return
+			return nil, err
 		}
 		env.Guild, err = b.Session.State.Guild(env.VoiceChannel.GuildID)
 		if err != nil {
-			return
+			return nil, err
 		}
 	default:
 		err = fmt.Errorf("Unsupported type %T for context seed", s)
-		return
+		return nil, err
 	}
-	return
+	return env, nil
 }
 
 // Satisfies is true when an environment meets the requirements defined in a Condition
