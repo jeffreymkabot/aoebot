@@ -199,11 +199,15 @@ type Condition struct {
 }
 
 func (c Condition) GeneratedName() string {
-	isRegex := c.RegexPhrase != ""
-	if isRegex {
-		return fmt.Sprintf("%s \t%s \ton \t\"%s\"", c.Action.Type, c.Action.Action, c.RegexPhrase)
+	switch (c.Action.Type) {
+	case react:
+		if c.RegexPhrase != "" {
+			return fmt.Sprintf("%s -regex `%s` on \"`%s`\"", c.Action.Type, c.Action.Action, c.RegexPhrase)
+		}
+		return fmt.Sprintf("%s `%s` on \"`%s`\"", c.Action.Type, c.Action.Action, c.Phrase)
+	default:
+		return fmt.Sprintf("%s \"`%s`\" on \"`%s`\"", c.Action.Type, c.Action.Action, c.Phrase)
 	}
-	return fmt.Sprintf("%s \t%s \ton \t\"%s\"", c.Action.Type, c.Action.Action, c.Phrase)
 }
 
 // ActionEnvelope encapsulates an Action and its ActionType
