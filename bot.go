@@ -223,7 +223,7 @@ func (b *Bot) React(channelID string, messageID string, emoji string) (unreact f
 // Say drops the payload when the voicebox for that guild queue is full
 func (b *Bot) Say(guildID string, channelID string, reader io.Reader) (err error) {
 	if player, ok := b.voiceboxes[guildID]; ok && player != nil {
-		_, err = player.Enqueue(channelID, "", dgv.PreEncoded(reader))
+		err = player.Enqueue(channelID, "", dgv.PreEncoded(reader))
 	} else {
 		err = fmt.Errorf("No voicebox registered for guild %v", guildID)
 	}
@@ -416,7 +416,7 @@ func (b *Bot) command(args []string) (Command, []string) {
 
 func (b *Bot) exec(env *Environment, cmd Command, args []string) {
 	if cmd.IsOwnerOnly() && env.Author.ID != b.owner {
-		_ = b.Write(env.TextChannel.ID, "Sorry, only dad can use that one 🙃", false)
+		b.Write(env.TextChannel.ID, "I'm sorry, Dave.  I'm afraid I can't do that.  🔴", false)
 		return
 	}
 	defer func() {

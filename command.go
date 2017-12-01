@@ -185,7 +185,7 @@ func (r *Reconnect) Run(env *Environment, args []string) error {
 	if env.Guild == nil {
 		return errors.New("No guild")
 	}
-	_ = env.Bot.Write(env.TextChannel.ID, `Sure thing 🙂`, false)
+	env.Bot.Write(env.TextChannel.ID, `Sure thing 🙂`, false)
 	env.Bot.speakTo(env.Guild)
 	return nil
 }
@@ -213,7 +213,7 @@ func (r *Restart) IsOwnerOnly() bool {
 }
 
 func (r *Restart) Run(env *Environment, args []string) error {
-	_ = env.Bot.Write(env.TextChannel.ID, `Okay dad 👀`, false)
+	env.Bot.Write(env.TextChannel.ID, `Okay dad 👀`, false)
 	env.Bot.Stop()
 	return env.Bot.Start()
 }
@@ -245,10 +245,10 @@ func (s *Shutdown) Run(env *Environment, args []string) error {
 	isHard := f.Bool("hard", false, "shutdown without cleanup")
 	err := f.Parse(args)
 	if err != nil && *isHard {
-		_ = env.Bot.Write(env.TextChannel.ID, `💀`, false)
+		env.Bot.Write(env.TextChannel.ID, `💀`, false)
 		env.Bot.Die(ErrForceQuit)
 	} else {
-		_ = env.Bot.Write(env.TextChannel.ID, `Are you sure dad? 😳 💤`, false)
+		env.Bot.Write(env.TextChannel.ID, `Are you sure dad? 😳 💤`, false)
 		env.Bot.Die(ErrQuit)
 	}
 	return nil

@@ -30,32 +30,37 @@ func newDriver(dbURL string) (d *Driver, err error) {
 }
 
 // actions are discovered as subdocments of entries in the "conditions" collection
-// Conditions are specify properties of Environments that they correspond to
+// Conditions specify properties of Environments that they correspond to
 func (d *Driver) actions(env *Environment) []Action {
-	actions := []Action{}
 	coll := d.DB("aoebot").C("conditions")
 	query := queryEnvironment(env)
 	log.Printf("Using query %s", query)
+
 	conditions := []Condition{}
 	err := coll.Find(query).All(&conditions)
 	if err != nil {
 		log.Printf("Error in query %v", err)
 	}
-	for _, c := range conditions {
-		if c.RegexPhrase != "" && env.TextMessage != nil {
-			if regexp.MustCompile(c.RegexPhrase).MatchString(strings.ToLower(env.TextMessage.Content)) {
-				actions = append(actions, c.Action.Action)
+
+	actions := []Action{}
+	for _, cond := range conditions {
+		if cond.RegexPhrase != "" && env.TextMessage != nil {
+			re, err := regexp.Compile(cond.RegexPhrase)
+			if err == nil && re.MatchString(strings.ToLower(env.TextMessage.Content)) {
+				actions = append(actions, cond.Action.Action)
 			}
 		} else {
-			actions = append(actions, c.Action.Action)
+			actions = append(actions, cond.Action.Action)
 		}
 	}
 	return actions
 }
 
+// ConditionsGuild returns all the custom conditions created through the discord message interface
+// that are exclusive to a particular guild.
 func (d *Driver) ConditionsGuild(guildID string) []Condition {
-	conditions := []Condition{}
 	coll := d.DB("aoebot").C("conditions")
+	// conditions created through discord message interface always have createdby
 	query := bson.M{
 		"createdby": bson.M{
 			"$exists": true,
@@ -63,6 +68,8 @@ func (d *Driver) ConditionsGuild(guildID string) []Condition {
 		"guild":   guildID,
 		"enabled": true,
 	}
+
+	conditions := []Condition{}
 	err := coll.Find(query).All(&conditions)
 	if err != nil {
 		log.Printf("Error in query guild custom conditions %v", err)
@@ -71,10 +78,14 @@ func (d *Driver) ConditionsGuild(guildID string) []Condition {
 	return conditions
 }
 
+// ConditionAdd inserts a new custom condition for a guild.
+// ConditionAdd overwites an existing condition with the same environment and action to prevent duplication,
+// enabling it if it was disabled.
 func (d *Driver) ConditionAdd(c *Condition, creator string) error {
-	if len(creator) < 1 {
+	if creator == "" {
 		return errors.New("Creator name is too short")
 	}
+
 	coll := d.DB("aoebot").C("conditions")
 	info, err := coll.Upsert(c, bson.M{
 		"$set": bson.M{
@@ -86,16 +97,26 @@ func (d *Driver) ConditionAdd(c *Condition, creator string) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("Added Condition %#v", info)
+	log.Printf("added Condition %#v", info)
 	return nil
 }
 
-func (d *Driver) ConditionDelete(c *Condition) error {
+// ConditionDisable disables a condition and any of its duplicates.
+func (d *Driver) ConditionDisable(c *Condition) error {
 	coll := d.DB("aoebot").C("conditions")
-	err := coll.Remove(c)
-	return err
+	info, err := coll.UpdateAll(c, bson.M{
+		"$set": bson.M{
+			"enabled": false,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	log.Printf("disabled Condition %#v", info)
+	return nil
 }
 
+// Channels retrieves all managed channels registered for any guild.
 func (d *Driver) Channels() []channel {
 	channels := []channel{}
 	coll := d.DB("aoebot").C("channels")
@@ -106,6 +127,7 @@ func (d *Driver) Channels() []channel {
 	return channels
 }
 
+// ChannelsGuild retrieves all managed channels registered for a particular guild.
 func (d *Driver) ChannelsGuild(guildID string) []channel {
 	channels := []channel{}
 	coll := d.DB("aoebot").C("channels")
@@ -119,12 +141,15 @@ func (d *Driver) ChannelsGuild(guildID string) []channel {
 	return channels
 }
 
+// ChannelsGuild registers a new managed channel.
+// Registered managed channels are recovered when the bot restarts.
 func (d *Driver) ChannelAdd(ch channel) error {
 	coll := d.DB("aoebot").C("channels")
-	err := coll.Insert(ch)
-	return err
+	return coll.Insert(ch)
 }
 
+// ChannelDelete unregisters a managed channel.
+// Managed channels that are unregistered are lost when the bot restarts.
 func (d *Driver) ChannelDelete(channelID ...string) error {
 	coll := d.DB("aoebot").C("channels")
 	query := bson.M{
@@ -132,15 +157,15 @@ func (d *Driver) ChannelDelete(channelID ...string) error {
 			"$in": channelID,
 		},
 	}
-	err := coll.Remove(query)
-	return err
+	return coll.Remove(query)
 }
 
 type query bson.M
 
+// make queries pleasant to read in log messages
 func (q query) String() string {
 	queryjson, _ := json.Marshal(q)
-	return fmt.Sprintf("%s", queryjson)
+	return string(queryjson)
 }
 
 func queryEnvironment(env *Environment) query {
@@ -172,6 +197,7 @@ func queryEnvironment(env *Environment) query {
 	})
 }
 
+// bson clause { "$in": [value, null] }
 func emptyOrEqual(field string, value interface{}) bson.M {
 	return bson.M{
 		field: bson.M{
@@ -183,11 +209,15 @@ func emptyOrEqual(field string, value interface{}) bson.M {
 	}
 }
 
-// Condition defines a set of requirements an environment should meet for a particular action to be performed on that environment
+// Condition defines a set of requirements an environment should meet
+// for a particular action to be performed on that environment.
 type Condition struct {
-	Name            string          `json:"name,omitempty" bson:"name,omitempty"`
-	IsEnabled       bool            `json:"enabled,omitempty" bson:"enabled,omitempty"`
-	CreatedBy       string          `json:"createdby,omitempty" bson:"createdby,omitempty"`
+	// metadata
+	Name      string `json:"name,omitempty" bson:"name,omitempty"`
+	IsEnabled bool   `json:"enabled,omitempty" bson:"enabled,omitempty"`
+	CreatedBy string `json:"createdby,omitempty" bson:"createdby,omitempty"`
+
+	// requirements
 	EnvironmentType EnvironmentType `json:"type" bson:"type"`
 	Phrase          string          `json:"phrase,omitempty" bson:"phrase,omitempty"`
 	RegexPhrase     string          `json:"regex,omitempty" bson:"regex,omitempty"`
@@ -195,29 +225,31 @@ type Condition struct {
 	TextChannelID   string          `json:"textChannel,omitempty" bson:"textChannel,omitempty"`
 	VoiceChannelID  string          `json:"voiceChannel,omitempty" bson:"voiceChannel,omitempty"`
 	UserID          string          `json:"user,omitempty" bson:"user,omitempty"`
-	Action          ActionEnvelope  `json:"action" bson:"action"`
+
+	// behavior
+	Action ActionEnvelope `json:"action" bson:"action"`
 }
 
+// GeneratedName standardizes the name of a condition based its requirements and behavior.
+// GeneratedName emits a string that can be used as the exact argument to a Del* command.
 func (c Condition) GeneratedName() string {
-	switch (c.Action.Type) {
-	case react:
+	if c.Action.Type == react {
 		if c.RegexPhrase != "" {
-			return fmt.Sprintf("%s -regex `%s` on \"`%s`\"", c.Action.Type, c.Action.Action, c.RegexPhrase)
+			return fmt.Sprintf("%s -regex `%s` on `%s`", c.Action.Type, c.Action.Action, c.RegexPhrase)
 		}
 		return fmt.Sprintf("%s `%s` on \"`%s`\"", c.Action.Type, c.Action.Action, c.Phrase)
-	default:
-		return fmt.Sprintf("%s \"`%s`\" on \"`%s`\"", c.Action.Type, c.Action.Action, c.Phrase)
 	}
+	return fmt.Sprintf("%s \"`%s`\" on \"`%s`\"", c.Action.Type, c.Action.Action, c.Phrase)
 }
 
-// ActionEnvelope encapsulates an Action and its ActionType
+// ActionEnvelope encapsulates an Action and its ActionType.
+// ActionEnvelope is used to unmarshal an action subdocument in a bson payload into the correct type.
 type ActionEnvelope struct {
 	Type ActionType
 	Action
 }
 
-// NewActionEnvelope creates an around an Action
-// TODO refactor Action.Envelope() ??
+// NewActionEnvelope creates an around an Action.
 func NewActionEnvelope(a Action) ActionEnvelope {
 	return ActionEnvelope{
 		Type:   a.kind(),
@@ -225,17 +257,16 @@ func NewActionEnvelope(a Action) ActionEnvelope {
 	}
 }
 
-// ActionTypeMap is a one-to-one correspondence between an ActionType and a type implementing Action
-// Calling a function retrieved from ActionTypeMap returns a pointer to a concrete instance of that Type
+// ActionTypeMap is used to retrieve an empty concrete Action corresponding to an ActionType.
 var ActionTypeMap = map[ActionType]func() Action{
 	write: func() Action { return &WriteAction{} },
 	voice: func() Action { return &VoiceAction{} },
 	react: func() Action { return &ReactAction{} },
 }
 
-// SetBSON lets ActionEnvelope implement the bson.Setter interface
-// ActionEnvelope needs to have its be partially unmarshalled into an intermediate struct
-// in order to deterimine which concrete type its Action field can be unmarshalled into
+// SetBSON implements the bson.Setter interface.
+// ActionEnvelope needs to be partially unmarshalled into an intermediate struct
+// in order to deterimine which concrete type its Action field can be unmarshalled into.
 func (ae *ActionEnvelope) SetBSON(raw bson.Raw) error {
 	var err error
 	var tmp struct {

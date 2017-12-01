@@ -11,7 +11,32 @@ import (
 	"github.com/jeffreymkabot/aoebot"
 )
 
-var reactCmdRegex = regexp.MustCompile(`^(?:<:(\S+:\S+)>|(\S.*)) on "(\S.*)"$`)
+// emojis have a special text representation for guild custom emojis
+var reactCmdRegexp = regexp.MustCompile(`^(?:<:(\S+:\S+)>|(\S.*)) on "(\S.*)"$`)
+
+func parseReactCmd(arg string, usage string) (emoji string, phrase string, err error) {
+	submatches := reactCmdRegexp.FindStringSubmatch(arg)
+	if submatches == nil {
+		err = errors.New(usage)
+		return
+	}
+
+	if submatches[1] != "" {
+		emoji = submatches[1]
+	} else if submatches[2] != "" {
+		emoji = submatches[2]
+	} else {
+		err = errors.New("Couldn't parse emoji")
+		return
+	}
+
+	if submatches[3] == "" {
+		err = errors.New("Couldn't parse phrase")
+		return
+	}
+	phrase = strings.ToLower(submatches[3])
+	return
+}
 
 type AddReact struct{}
 
@@ -62,24 +87,9 @@ func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
 	}
 
 	argString := strings.Join(f.Args(), " ")
-	if !reactCmdRegex.MatchString(argString) {
-		 return errors.New(a.Usage())
-	}
-	submatches := reactCmdRegex.FindStringSubmatch(argString)
-
-	var emoji string
-	if len(submatches[1]) > 0 {
-		emoji = submatches[1]
-	} else {
-		emoji = submatches[2]
-	}
-	if len(emoji) == 0 {
-		return errors.New("Couldn't parse emoji")
-	}
-
-	phrase := strings.ToLower(submatches[3])
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	emoji, phrase, err := parseReactCmd(argString, a.Usage())
+	if err != nil {
+		return err
 	}
 
 	log.Printf("Trying emoji %v\n", emoji)
@@ -165,24 +175,9 @@ func (a *DelReact) Run(env *aoebot.Environment, args []string) error {
 	}
 
 	argString := strings.Join(f.Args(), " ")
-	if !reactCmdRegex.MatchString(argString) {
-		return errors.New(a.Usage())
-	}
-	submatches := reactCmdRegex.FindStringSubmatch(argString)
-
-	var emoji string
-	if len(submatches[1]) > 0 {
-		emoji = submatches[1]
-	} else {
-		emoji = submatches[2]
-	}
-	if len(emoji) == 0 {
-		return errors.New("Coudln't parse emoji")
-	}
-
-	phrase := submatches[3]
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	emoji, phrase, err := parseReactCmd(argString, a.Usage())
+	if err != nil {
+		return err
 	}
 
 	cond := &aoebot.Condition{
@@ -202,7 +197,7 @@ func (a *DelReact) Run(env *aoebot.Environment, args []string) error {
 		cond.Phrase = strings.ToLower(phrase)
 	}
 
-	return env.Bot.Driver.ConditionDelete(cond)
+	return env.Bot.Driver.ConditionDisable(cond)
 }
 
 func (a *DelReact) Ack(env *aoebot.Environment) string {

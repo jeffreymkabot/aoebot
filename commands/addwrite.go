@@ -8,7 +8,28 @@ import (
 	"github.com/jeffreymkabot/aoebot"
 )
 
-var writeCmdRegex = regexp.MustCompile(`^"(\S.*)" on "(\S.*)"$`)
+var writeCmdRegexp = regexp.MustCompile(`^"(\S.*)" on "(\S.*)"$`)
+
+func parseWriteCmd(arg string, usage string) (response string, phrase string, err error) {
+	submatches := writeCmdRegexp.FindStringSubmatch(arg)
+	if submatches == nil {
+		err = errors.New(usage)
+		return
+	}
+
+	if submatches[1] == "" {
+		err = errors.New("Couldn't parse response")
+		return
+	}
+	response = submatches[1]
+
+	if submatches[2] == "" {
+		err = errors.New("Couldn't parse phrase")
+		return
+	}
+	phrase = strings.ToLower(submatches[2])
+	return
+}
 
 type AddWrite struct{}
 
@@ -50,19 +71,9 @@ func (a *AddWrite) Run(env *aoebot.Environment, args []string) error {
 	}
 
 	argString := strings.Join(args, " ")
-	if !writeCmdRegex.MatchString(argString) {
-		return errors.New(a.Usage())
-	}
-	submatches := writeCmdRegex.FindStringSubmatch(argString)
-
-	response := submatches[1]
-	if len(response) == 0 {
-		return errors.New("Couldn't parse response")
-	}
-
-	phrase := strings.ToLower(submatches[2])
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	response, phrase, err := parseWriteCmd(argString, a.Usage())
+	if err != nil {
+		return err
 	}
 
 	cond := &aoebot.Condition{
@@ -115,19 +126,9 @@ func (d *DelWrite) Run(env *aoebot.Environment, args []string) error {
 	}
 
 	argString := strings.Join(args, " ")
-	if !writeCmdRegex.MatchString(argString) {
-		return errors.New(d.Usage())
-	}
-	submatches := writeCmdRegex.FindStringSubmatch(argString)
-
-	response := submatches[1]
-	if len(response) == 0 {
-		return errors.New("Couldn't parse response")
-	}
-
-	phrase := strings.ToLower(submatches[2])
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	response, phrase, err := parseWriteCmd(argString, d.Usage())
+	if err != nil {
+		return err
 	}
 
 	cond := &aoebot.Condition{
@@ -139,7 +140,7 @@ func (d *DelWrite) Run(env *aoebot.Environment, args []string) error {
 		}),
 	}
 
-	return env.Bot.Driver.ConditionDelete(cond)
+	return env.Bot.Driver.ConditionDisable(cond)
 }
 
 func (a *DelWrite) Ack(env *aoebot.Environment) string {

@@ -19,6 +19,21 @@ const voiceFilePath = "media/audio/%s.dca"
 
 var addvoiceCmdRegexp = regexp.MustCompile(`^on "(\S.*)"$`)
 
+func parseAddVoiceCmd(arg string, usage string) (phrase string, err error) {
+	submatches := addvoiceCmdRegexp.FindStringSubmatch(arg)
+	if submatches == nil {
+		err = errors.New(usage)
+		return
+	}
+
+	if submatches[1] == "" {
+		err = errors.New("Couldn't parse phrase")
+		return
+	}
+	phrase = strings.ToLower(submatches[1])
+	return
+}
+
 type AddVoice struct{}
 
 func (a *AddVoice) Name() string {
@@ -71,14 +86,9 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 	}
 
 	argString := strings.Join(f.Args(), " ")
-	if !addvoiceCmdRegexp.MatchString(argString) {
-		return errors.New(a.Usage())
-	}
-	submatches := addvoiceCmdRegexp.FindStringSubmatch(argString)
-
-	phrase := strings.ToLower(submatches[1])
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	phrase, err := parseAddVoiceCmd(argString, a.Usage())
+	if err != nil {
+		return err
 	}
 
 	url := env.TextMessage.Attachments[0].URL
@@ -178,6 +188,27 @@ func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...
 
 var delvoiceCmdRegexp = regexp.MustCompile(`^"(\S.*)" on "(\S.*)"$`)
 
+func parseDelVoiceCmd(arg string, usage string) (filename string, phrase string, err error) {
+	submatches := delvoiceCmdRegexp.FindStringSubmatch(arg)
+	if submatches == nil {
+		err = errors.New(usage)
+		return
+	}
+
+	if submatches[1] == "" {
+		err = errors.New("Couldn't parse filename")
+		return
+	}
+	filename = submatches[1]
+
+	if submatches[2] == "" {
+		err = errors.New("Couldn't parse phrase")
+		return
+	}
+	phrase = strings.ToLower(submatches[2])
+	return
+}
+
 type DelVoice struct{}
 
 func (d *DelVoice) Name() string {
@@ -215,19 +246,9 @@ func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 	}
 
 	argString := strings.Join(args, " ")
-	if !delvoiceCmdRegexp.MatchString(argString) {
-		return errors.New(d.Usage())
-	}
-	submatches := delvoiceCmdRegexp.FindStringSubmatch(argString)
-
-	filename := submatches[1]
-	if len(filename) == 0 {
-		return errors.New("Coudln't parse filename")
-	}
-
-	phrase := strings.ToLower(submatches[2])
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	filename, phrase, err := parseDelVoiceCmd(argString, d.Usage())
+	if err != nil {
+		return err
 	}
 
 	cond := &aoebot.Condition{
@@ -241,7 +262,7 @@ func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 		}),
 	}
 
-	return env.Bot.Driver.ConditionDelete(cond)
+	return env.Bot.Driver.ConditionDisable(cond)
 }
 
 func (a *DelVoice) Ack(env *aoebot.Environment) string {
