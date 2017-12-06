@@ -403,15 +403,29 @@ func (b *Bot) speakTo(g *discordgo.Guild) {
 
 func (b *Bot) command(args []string) (Command, []string) {
 	if len(args) > 0 {
-		cmd := strings.ToLower(args[0])
+		candidate := strings.ToLower(args[0])
 		args := args[1:]
-		for _, c := range b.commands {
-			if c.Name() == cmd {
-				return c, args
+		for _, cmd := range b.commands {
+			if matchesNameOrAlias(cmd, candidate) {
+				return cmd, args
 			}
 		}
 	}
 	return &Help{}, []string{}
+}
+
+func matchesNameOrAlias(cmd Command, candidate string) bool {
+	if cmd.Name() == candidate {
+		return true
+	}
+	if cmdAlias, ok := cmd.(CommandWithAliases); ok {
+		for _, alias := range cmdAlias.Aliases() {
+			if alias == candidate {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (b *Bot) exec(env *Environment, cmd Command, args []string) {

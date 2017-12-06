@@ -13,29 +13,33 @@ import (
 const memesPerPage = 100
 const memesPerRow = 5
 
-type GetMemes struct{}
+type Memes struct{}
 
-func (g *GetMemes) Name() string {
+func (g *Memes) Name() string {
 	return strings.Fields(g.Usage())[0]
 }
 
-func (g *GetMemes) Usage() string {
-	return `getmemes`
+func (g *Memes) Aliases() []string {
+	return []string{"getmemes", "ls", "listmemes", "list"}
 }
 
-func (g *GetMemes) Short() string {
+func (g *Memes) Usage() string {
+	return `memes`
+}
+
+func (g *Memes) Short() string {
 	return `List actions created by add* commands`
 }
 
-func (g *GetMemes) Long() string {
+func (g *Memes) Long() string {
 	return g.Short() + "."
 }
 
-func (g *GetMemes) IsOwnerOnly() bool {
+func (g *Memes) IsOwnerOnly() bool {
 	return false
 }
 
-func (g *GetMemes) Run(env *aoebot.Environment, args []string) error {
+func (g *Memes) Run(env *aoebot.Environment, args []string) error {
 	if env.Guild == nil {
 		return errors.New("No guild")
 	}
@@ -75,7 +79,7 @@ func memesEmbeds(conds []aoebot.Condition) (embeds []*discordgo.MessageEmbed) {
 func memesEmbed(page []aoebot.Condition, title string, offset int) *discordgo.MessageEmbed {
 	embed := &discordgo.MessageEmbed{}
 	embed.Title = title
-	embed.Description = strconv.Itoa(offset) + " : " + strconv.Itoa(offset+len(page))
+	embed.Description = strconv.Itoa(offset) + " : " + strconv.Itoa(offset+len(page)-1)
 	embed.Fields = []*discordgo.MessageEmbedField{}
 
 	for i := 0; i < len(page); i += memesPerRow {

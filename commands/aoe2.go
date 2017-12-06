@@ -16,6 +16,10 @@ func (a *Aoe2) Name() string {
 	return strings.Fields(a.Usage())[0]
 }
 
+func (a *Aoe2) Aliases() []string{
+	return []string{"aoe"}
+}
+
 func (a *Aoe2) Usage() string {
 	return `aoe2`
 }

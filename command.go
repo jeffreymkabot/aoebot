@@ -31,6 +31,11 @@ type CommandWithAck interface {
 	Ack(env *Environment) string
 }
 
+type CommandWithAliases interface {
+	Command
+	Aliases() []string
+}
+
 type Help struct{}
 
 func (h *Help) Name() string {
@@ -145,6 +150,11 @@ func helpWithCommandEmbed(env *Environment, cmd Command) *discordgo.MessageEmbed
 			Name:  "Description",
 			Value: cmd.Long(),
 		})
+	if cmdAlias, ok := cmd.(CommandWithAliases); ok && len(cmdAlias.Aliases()) > 0 {
+		embed.Footer = &discordgo.MessageEmbedFooter{
+			Text: "Aliases: `" + strings.Join(cmdAlias.Aliases(), ", ") + "`",
+		}
+	}
 	return embed
 }
 
