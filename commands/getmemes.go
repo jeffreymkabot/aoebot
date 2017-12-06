@@ -58,7 +58,7 @@ func (g *GetMemes) Run(env *aoebot.Environment, args []string) error {
 }
 
 func memesEmbeds(conds []aoebot.Condition) (embeds []*discordgo.MessageEmbed) {
-	title := strconv.Itoa(len(conds)) + " memes :)"
+	title := strconv.Itoa(len(conds)) + " memes, wow :))"
 
 	for i := 0; i < len(conds); i += memesPerPage {
 		end := i + memesPerPage
@@ -67,27 +67,25 @@ func memesEmbeds(conds []aoebot.Condition) (embeds []*discordgo.MessageEmbed) {
 		}
 
 		page := conds[i:end]
-		desc := strconv.Itoa(i) + " : " + strconv.Itoa(end)
-
-		embeds = append(embeds, memesEmbed(page, title, desc))
+		embeds = append(embeds, memesEmbed(page, title, i))
 	}
 	return
 }
 
-func memesEmbed(conds []aoebot.Condition, title string, desc string) *discordgo.MessageEmbed {
+func memesEmbed(page []aoebot.Condition, title string, offset int) *discordgo.MessageEmbed {
 	embed := &discordgo.MessageEmbed{}
 	embed.Title = title
-	embed.Description = desc
+	embed.Description = strconv.Itoa(offset) + " : " + strconv.Itoa(offset+len(page))
 	embed.Fields = []*discordgo.MessageEmbedField{}
 
-	for i := 0; i < len(conds); i += memesPerRow {
+	for i := 0; i < len(page); i += memesPerRow {
 		end := i + memesPerRow
-		if end > len(conds) {
-			end = len(conds)
+		if end > len(page) {
+			end = len(page)
 		}
-		row := conds[i:end]
+		row := page[i:end]
 
-		field := &discordgo.MessageEmbedField{Name: strconv.Itoa(i)}
+		field := &discordgo.MessageEmbedField{Name: strconv.Itoa(i + offset)}
 		for _, cond := range row {
 			field.Value += cond.GeneratedName() + "\n"
 		}
