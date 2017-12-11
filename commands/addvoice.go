@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -13,11 +14,27 @@ import (
 
 	"github.com/jeffreymkabot/aoebot"
 	"github.com/jonas747/dca"
+	"gopkg.in/mgo.v2/bson"
 )
 
 const voiceFilePath = "media/audio/%s.dca"
 
 var addvoiceCmdRegexp = regexp.MustCompile(`^on "(\S.*)"$`)
+
+type guildPrefs struct {
+	GuildID       string `bson:"guild"`
+	SpamChannelID string `bson:"spam_channel"`
+}
+
+func getGuildPrefs(b *aoebot.Bot, guildID string) (*guildPrefs, error) {
+	coll := b.Driver.DB("aoebot").C("guilds")
+	query := bson.M{
+		"guild": guildID,
+	}
+	prefs := &guildPrefs{}
+	err := coll.Find(query).One(&prefs)
+	return prefs, err
+}
 
 func parseAddVoiceCmd(arg string, usage string) (phrase string, err error) {
 	submatches := addvoiceCmdRegexp.FindStringSubmatch(arg)
@@ -98,10 +115,20 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// if the guild has a spam text channel set up, restrict the voice condition to act only on
+	// phrases written to the spam channel
+	textChannelID := ""
+	if prefs, err := getGuildPrefs(env.Bot, env.Guild.ID); err == nil {
+		log.Printf("Using saved guild prefs %#v", prefs)
+		textChannelID = prefs.SpamChannelID
+	}
+
 	cond := &aoebot.Condition{
 		EnvironmentType: aoebot.Message,
 		GuildID:         env.Guild.ID,
 		Phrase:          phrase,
+		TextChannelID:   textChannelID,
 		Action: aoebot.NewActionEnvelope(&aoebot.VoiceAction{
 			File:  file.Name(),
 			Alias: filename,
