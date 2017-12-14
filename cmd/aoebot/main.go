@@ -58,6 +58,7 @@ func main() {
 	bot.AddCommand(&commands.DelWrite{})
 	bot.AddCommand(&commands.AddVoice{})
 	bot.AddCommand(&commands.DelVoice{})
+	bot.AddCommand(&commands.Roll{})
 	bot.AddCommand(&commands.Source{})
 	bot.AddCommand(&commands.Stats{})
 	bot.AddCommand(&commands.TestAction{})
