@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"text/tabwriter"
+	"text/template"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -97,6 +98,8 @@ func (h *Help) Run(env *Environment, args []string) error {
 		return err
 	}
 
+	args = f.Args()
+
 	respChannelID := env.TextChannel.ID
 	fromDmChannel := env.TextChannel.Type == discordgo.ChannelTypeDM || env.TextChannel.Type == discordgo.ChannelTypeGroupDM
 	// open a private msg channel if the message did not come from one
@@ -130,6 +133,9 @@ func (h *Help) Ack(env *Environment) string {
 	return ""
 }
 
+var helpDescTmpl = template.Must(template.New("helpDesc").Parse(
+	"All commands start with `{{.Prefix}}`.\nTo get more help about any command use {{.Prefix}} {{.Usage}}"))
+
 func (h *Help) embed(env *Environment) *discordgo.MessageEmbed {
 	embed := &discordgo.MessageEmbed{}
 	embed.Title = h.Name()
@@ -139,20 +145,25 @@ func (h *Help) embed(env *Environment) *discordgo.MessageEmbed {
 			URL: env.Bot.Config.HelpThumbnail,
 		}
 	}
-	embed.Description = fmt.Sprintf("All commands start with `%s`.\n", env.Bot.Config.Prefix)
-	embed.Description += fmt.Sprintf("To get more help about any command use `%s %s`.\n", env.Bot.Config.Prefix, h.Usage())
+	data := struct {
+		Prefix string
+		Usage  string
+	}{env.Bot.Config.Prefix, h.Usage()}
+	buf := &bytes.Buffer{}
+	helpDescTmpl.Execute(buf, data)
+	embed.Description = buf.String()
 	embed.Fields = []*discordgo.MessageEmbedField{}
 	if len(h.Examples()) > 0 {
 		embed.Fields = append(embed.Fields, examplesEmbedField(env.Bot.Config.Prefix, h.Examples()))
 	}
-	buf := &bytes.Buffer{}
-	w := tabwriter.NewWriter(buf, 4, 4, 0, '.', 0)
+	buf.Reset()
+	tw := tabwriter.NewWriter(buf, 4, 4, 0, '.', 0)
 	for _, c := range env.Bot.commands {
 		if !c.IsOwnerOnly() {
-			fmt.Fprintf(w, "`%s..\t%s`\n", c.Name(), c.Short())
+			fmt.Fprintf(tw, "`%s..\t%s`\n", c.Name(), c.Short())
 		}
 	}
-	w.Flush()
+	tw.Flush()
 	embed.Fields = append(embed.Fields,
 		&discordgo.MessageEmbedField{
 			Name:  "Commands",
@@ -186,20 +197,20 @@ func helpWithCommandEmbed(env *Environment, cmd Command) *discordgo.MessageEmbed
 		})
 	if len(cmd.Aliases()) > 0 {
 		embed.Footer = &discordgo.MessageEmbedFooter{
-			Text: "Aliases: `" + strings.Join(cmd.Aliases(), ", ") + "`",
+			Text: fmt.Sprintf("Aliases: `%s`", strings.Join(cmd.Aliases(), ", ")),
 		}
 	}
 	return embed
 }
 
 func examplesEmbedField(prefix string, examples []string) *discordgo.MessageEmbedField {
-	list := ""
+	buf := &bytes.Buffer{}
 	for _, ex := range examples {
-		list += fmt.Sprintf("`%s %s`\n", prefix, ex)
+		fmt.Fprintf(buf, "`%s %s`\n", prefix, ex)
 	}
 	return &discordgo.MessageEmbedField{
 		Name:  "Example",
-		Value: list,
+		Value: buf.String(),
 	}
 }
 

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"errors"
 	"strconv"
 	"strings"
@@ -88,9 +89,11 @@ func memesEmbed(page []aoebot.Condition, title string, offset int) *discordgo.Me
 		row := page[i:end]
 
 		field := &discordgo.MessageEmbedField{Name: strconv.Itoa(i + offset)}
+		buf := &bytes.Buffer{}
 		for _, cond := range row {
-			field.Value += cond.GeneratedName() + "\n"
+			buf.WriteString(cond.GeneratedName() + "\n")
 		}
+		field.Value = buf.String()
 		embed.Fields = append(embed.Fields, field)
 	}
 	return embed

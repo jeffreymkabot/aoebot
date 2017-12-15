@@ -1,7 +1,6 @@
 package aoebot
 
 import (
-	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -22,7 +21,7 @@ func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
 		b.addHandler(b.onGuildCreate())
 		b.addHandler(b.onMessageCreate())
 		b.addHandler(b.onVoiceStateUpdate())
-		b.Session.UpdateStatus(0, fmt.Sprintf("%s %s", b.Config.Prefix, (&Help{}).Name()))
+		b.Session.UpdateStatus(0, b.Config.Prefix+" "+(&Help{}).Name())
 	}
 }
 

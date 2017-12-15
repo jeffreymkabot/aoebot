@@ -2,7 +2,6 @@ package aoebot
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"os"
 )
@@ -38,9 +37,9 @@ func (wa WriteAction) kind() ActionType {
 
 func (wa WriteAction) String() string {
 	if wa.TTS {
-		return fmt.Sprintf("/tts %v", wa.Content)
+		return "/tts" + wa.Content
 	}
-	return fmt.Sprintf("%v", wa.Content)
+	return wa.Content
 }
 
 // ReactAction specifies an emoji that can be used to react to a message
@@ -58,7 +57,7 @@ func (ra ReactAction) kind() ActionType {
 }
 
 func (ra ReactAction) String() string {
-	return fmt.Sprintf("%s", ra.Emoji)
+	return ra.Emoji
 }
 
 // VoiceAction specifies audio that can be said to a voice channel
@@ -96,7 +95,7 @@ func (va VoiceAction) kind() ActionType {
 
 func (va VoiceAction) String() string {
 	if va.Alias != "" {
-		return fmt.Sprintf("%v", va.Alias)
+		return va.Alias
 	}
-	return fmt.Sprintf("%v", va.File)
+	return va.File
 }

@@ -17,10 +17,6 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-const voiceFilePath = "media/audio/%s.dca"
-
-var addvoiceCmdRegexp = regexp.MustCompile(`^on "(\S.*)"$`)
-
 type guildPrefs struct {
 	GuildID       string `bson:"guild"`
 	SpamChannelID string `bson:"spam_channel"`
@@ -35,6 +31,8 @@ func getGuildPrefs(b *aoebot.Bot, guildID string) (*guildPrefs, error) {
 	err := coll.Find(query).One(&prefs)
 	return prefs, err
 }
+
+var addvoiceCmdRegexp = regexp.MustCompile(`^on "(\S.*)"$`)
 
 func parseAddVoiceCmd(arg string, usage string) (phrase string, err error) {
 	submatches := addvoiceCmdRegexp.FindStringSubmatch(arg)
@@ -150,6 +148,10 @@ func withFilters(filters string) encodeOption {
 	}
 }
 
+const limiterFilter = "loudnorm=i=-29"
+
+const voiceFilePathTmpl = "media/audio/%s.dca"
+
 func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...encodeOption) (*os.File, error) {
 	resp, err := http.Get(url)
 	if err != nil {
@@ -176,7 +178,7 @@ func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...
 	if encodeOptions.AudioFilter != "" {
 		encodeOptions.AudioFilter += ", "
 	}
-	encodeOptions.AudioFilter += "loudnorm=i=-28"
+	encodeOptions.AudioFilter += limiterFilter
 
 	encoder, err := dca.EncodeMem(resp.Body, encodeOptions)
 	if err != nil {
@@ -184,7 +186,7 @@ func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...
 	}
 	defer encoder.Cleanup()
 
-	f, err := os.Create(fmt.Sprintf(voiceFilePath, fname))
+	f, err := os.Create(fmt.Sprintf(voiceFilePathTmpl, fname))
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +283,7 @@ func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 		Action: aoebot.NewActionEnvelope(&aoebot.VoiceAction{
 			// TODO why does it need both ??
 			Alias: filename,
-			File:  fmt.Sprintf(voiceFilePath, filename),
+			File:  fmt.Sprintf(voiceFilePathTmpl, filename),
 		}),
 	}
 

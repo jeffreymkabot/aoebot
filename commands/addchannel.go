@@ -59,7 +59,7 @@ func (ac *AddChannel) Run(env *aoebot.Environment, args []string) error {
 		return errors.New("I'm not allowed to make any more channels in this guild 😦")
 	}
 
-	chName := fmt.Sprintf("@!%s", env.Author)
+	chName := "@!" + env.Author.String()
 	if *isOpen {
 		chName = "open" + chName
 	}
