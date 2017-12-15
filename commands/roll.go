@@ -15,7 +15,9 @@ const defaultSides = 20
 
 var sidesRegexp = regexp.MustCompile(`(\d+)`)
 
-type Roll struct{}
+type Roll struct {
+	aoebot.BaseCommand
+}
 
 func (r *Roll) Name() string {
 	return strings.Fields(r.Usage())[0]
@@ -44,10 +46,6 @@ func (r *Roll) Examples() []string {
 	}
 }
 
-func (r *Roll) IsOwnerOnly() bool {
-	return false
-}
-
 func (r *Roll) Run(env *aoebot.Environment, args []string) error {
 	n := defaultSides
 	err := error(nil)
@@ -64,4 +62,3 @@ func (r *Roll) Run(env *aoebot.Environment, args []string) error {
 	message := fmt.Sprintf("%s rolled %d on a d%d.", env.Author.Username, result, n)
 	return env.Bot.Write(env.TextChannel.ID, message, false)
 }
-

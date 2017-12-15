@@ -9,7 +9,9 @@ import (
 	"github.com/jeffreymkabot/aoebot"
 )
 
-type AddChannel struct{}
+type AddChannel struct {
+	aoebot.BaseCommand
+}
 
 func (ac *AddChannel) Name() string {
 	return strings.Fields(ac.Usage())[0]
@@ -39,10 +41,6 @@ func (a *AddChannel) Examples() []string {
 		`addchannel -users 4`,
 		`addchannel -openmic -users 6`,
 	}
-}
-
-func (ac *AddChannel) IsOwnerOnly() bool {
-	return false
 }
 
 func (ac *AddChannel) Run(env *aoebot.Environment, args []string) error {

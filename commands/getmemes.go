@@ -13,7 +13,9 @@ import (
 const memesPerPage = 100
 const memesPerRow = 5
 
-type Memes struct{}
+type Memes struct {
+	aoebot.BaseCommand
+}
 
 func (g *Memes) Name() string {
 	return strings.Fields(g.Usage())[0]
@@ -33,10 +35,6 @@ func (g *Memes) Short() string {
 
 func (g *Memes) Long() string {
 	return g.Short() + "."
-}
-
-func (g *Memes) IsOwnerOnly() bool {
-	return false
 }
 
 func (g *Memes) Run(env *aoebot.Environment, args []string) error {

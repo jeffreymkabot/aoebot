@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"strings"
 	"text/tabwriter"
 
@@ -19,31 +18,61 @@ type Command interface {
 	Long() string
 	IsOwnerOnly() bool
 	Run(*Environment, []string) error
-}
-
-type CommandWithExamples interface {
-	Command
 	Examples() []string
-}
-
-type CommandWithAck interface {
-	Command
+	Aliases() []string
 	Ack(env *Environment) string
 }
 
-type CommandWithAliases interface {
-	Command
-	Aliases() []string
+// BaseCommand is a nop command.
+// Real Commands may embed BaseCommand to use its default function implementations.
+type BaseCommand struct{}
+
+func (b *BaseCommand) Name() string {
+	return ""
 }
 
-type Help struct{}
+func (b *BaseCommand) Usage() string {
+	return ""
+}
+
+func (b *BaseCommand) Short() string {
+	return ""
+}
+
+func (b *BaseCommand) Long() string {
+	return ""
+}
+
+func (b *BaseCommand) IsOwnerOnly() bool {
+	return false
+}
+
+func (b *BaseCommand) Run() error {
+	return nil
+}
+
+func (b *BaseCommand) Examples() []string {
+	return []string{}
+}
+
+func (b *BaseCommand) Aliases() []string {
+	return []string{}
+}
+
+func (b *BaseCommand) Ack(env *Environment) string {
+	return ""
+}
+
+type Help struct {
+	BaseCommand
+}
 
 func (h *Help) Name() string {
 	return strings.Fields(h.Usage())[0]
 }
 
 func (h *Help) Usage() string {
-	return `help [command]`
+	return `help [-here] [command]`
 }
 
 func (h *Help) Short() string {
@@ -51,41 +80,46 @@ func (h *Help) Short() string {
 }
 
 func (h *Help) Long() string {
-	return h.Short() + "."
+	return h.Short() + ". Use the [-here] flag to make me respond in the same channel, otherwise I will whisper you."
 }
 
 func (h *Help) Examples() []string {
 	return []string{
-		`help addchannel`,
+		"help addchannel",
+		"help -here addchannel",
 	}
 }
 
-func (h *Help) IsOwnerOnly() bool {
-	return false
-}
-
 func (h *Help) Run(env *Environment, args []string) error {
-	var dm *discordgo.Channel
-	var err error
-	if env.TextChannel.Type == discordgo.ChannelTypeDM || env.TextChannel.Type == discordgo.ChannelTypeGroupDM {
-		log.Print("Reusing current dm channel")
-		dm = env.TextChannel
-	} else if dm, err = env.Bot.Session.UserChannelCreate(env.Author.ID); err != nil {
+	f := flag.NewFlagSet(h.Name(), flag.ContinueOnError)
+	shouldRespondInline := f.Bool("here", false, "respond in same channel")
+	if err := f.Parse(args); err != nil {
 		return err
+	}
+
+	respChannelID := env.TextChannel.ID
+	fromDmChannel := env.TextChannel.Type == discordgo.ChannelTypeDM || env.TextChannel.Type == discordgo.ChannelTypeGroupDM
+	// open a private msg channel if the message did not come from one
+	if !*shouldRespondInline && !fromDmChannel {
+		if dm, err := env.Bot.Session.UserChannelCreate(env.Author.ID); err != nil {
+			return err
+		} else {
+			respChannelID = dm.ID
+		}
 	}
 
 	if len(args) == 1 {
 		for _, c := range env.Bot.commands {
 			if strings.ToLower(args[0]) == strings.ToLower(c.Name()) {
 				embed := helpWithCommandEmbed(env, c)
-				_, err = env.Bot.Session.ChannelMessageSendEmbed(dm.ID, embed)
+				_, err := env.Bot.Session.ChannelMessageSendEmbed(respChannelID, embed)
 				return err
 			}
 		}
 	}
 
 	embed := h.embed(env)
-	_, err = env.Bot.Session.ChannelMessageSendEmbed(dm.ID, embed)
+	_, err := env.Bot.Session.ChannelMessageSendEmbed(respChannelID, embed)
 	return err
 }
 
@@ -142,17 +176,17 @@ func helpWithCommandEmbed(env *Environment, cmd Command) *discordgo.MessageEmbed
 			Name:  "Usage",
 			Value: fmt.Sprintf("`%s %s`", env.Bot.Config.Prefix, cmd.Usage()),
 		})
-	if cmdEx, ok := cmd.(CommandWithExamples); ok && len(cmdEx.Examples()) > 0 {
-		embed.Fields = append(embed.Fields, examplesEmbedField(env.Bot.Config.Prefix, cmdEx.Examples()))
+	if len(cmd.Examples()) > 0 {
+		embed.Fields = append(embed.Fields, examplesEmbedField(env.Bot.Config.Prefix, cmd.Examples()))
 	}
 	embed.Fields = append(embed.Fields,
 		&discordgo.MessageEmbedField{
 			Name:  "Description",
 			Value: cmd.Long(),
 		})
-	if cmdAlias, ok := cmd.(CommandWithAliases); ok && len(cmdAlias.Aliases()) > 0 {
+	if len(cmd.Aliases()) > 0 {
 		embed.Footer = &discordgo.MessageEmbedFooter{
-			Text: "Aliases: `" + strings.Join(cmdAlias.Aliases(), ", ") + "`",
+			Text: "Aliases: `" + strings.Join(cmd.Aliases(), ", ") + "`",
 		}
 	}
 	return embed
@@ -169,7 +203,9 @@ func examplesEmbedField(prefix string, examples []string) *discordgo.MessageEmbe
 	}
 }
 
-type Reconnect struct{}
+type Reconnect struct {
+	BaseCommand
+}
 
 func (r *Reconnect) Name() string {
 	return strings.Fields(r.Usage())[0]
@@ -187,10 +223,6 @@ func (r *Reconnect) Long() string {
 	return r.Short() + "."
 }
 
-func (r *Reconnect) IsOwnerOnly() bool {
-	return false
-}
-
 func (r *Reconnect) Run(env *Environment, args []string) error {
 	if env.Guild == nil {
 		return errors.New("No guild")
@@ -200,7 +232,9 @@ func (r *Reconnect) Run(env *Environment, args []string) error {
 	return nil
 }
 
-type Restart struct{}
+type Restart struct {
+	BaseCommand
+}
 
 func (r *Restart) Name() string {
 	return strings.Fields(r.Usage())[0]
@@ -228,7 +262,9 @@ func (r *Restart) Run(env *Environment, args []string) error {
 	return env.Bot.Start()
 }
 
-type Shutdown struct{}
+type Shutdown struct {
+	BaseCommand
+}
 
 func (s *Shutdown) Name() string {
 	return strings.Fields(s.Usage())[0]

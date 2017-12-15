@@ -31,7 +31,9 @@ func parseWriteCmd(arg string, usage string) (response string, phrase string, er
 	return
 }
 
-type AddWrite struct{}
+type AddWrite struct {
+	aoebot.BaseCommand
+}
 
 func (a *AddWrite) Name() string {
 	return strings.Fields(a.Usage())[0]
@@ -56,10 +58,6 @@ func (a *AddWrite) Examples() []string {
 		`addwrite "pong" on "ping"`,
 		`addwrite ":alien: ayy lmao :alien:" on "it's dat boi"`,
 	}
-}
-
-func (a *AddWrite) IsOwnerOnly() bool {
-	return false
 }
 
 func (a *AddWrite) Run(env *aoebot.Environment, args []string) error {
@@ -92,7 +90,9 @@ func (a *AddWrite) Ack(env *aoebot.Environment) string {
 	return "✅"
 }
 
-type DelWrite struct{}
+type DelWrite struct {
+	aoebot.BaseCommand
+}
 
 func (d *DelWrite) Name() string {
 	return strings.Fields(d.Usage())[0]
@@ -114,10 +114,6 @@ func (d *DelWrite) Examples() []string {
 	return []string{
 		`delwrite "who's there?" on "hello"`,
 	}
-}
-
-func (d *DelWrite) IsOwnerOnly() bool {
-	return false
 }
 
 func (d *DelWrite) Run(env *aoebot.Environment, args []string) error {

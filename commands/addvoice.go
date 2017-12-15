@@ -51,7 +51,9 @@ func parseAddVoiceCmd(arg string, usage string) (phrase string, err error) {
 	return
 }
 
-type AddVoice struct{}
+type AddVoice struct {
+	aoebot.BaseCommand
+}
 
 func (a *AddVoice) Name() string {
 	return strings.Fields(a.Usage())[0]
@@ -78,10 +80,6 @@ func (a *AddVoice) Examples() []string {
 		`addvoice on "skrrt"`,
 		`addvoice on "gotta go fast"`,
 	}
-}
-
-func (a *AddVoice) IsOwnerOnly() bool {
-	return false
 }
 
 func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
@@ -236,7 +234,9 @@ func parseDelVoiceCmd(arg string, usage string) (filename string, phrase string,
 	return
 }
 
-type DelVoice struct{}
+type DelVoice struct {
+	aoebot.BaseCommand
+}
 
 func (d *DelVoice) Name() string {
 	return strings.Fields(d.Usage())[0]
@@ -261,10 +261,6 @@ func (d *DelVoice) Examples() []string {
 	return []string{
 		`delvoice "greenhillzone.wav" on "gotta go fast"`,
 	}
-}
-
-func (d *DelVoice) IsOwnerOnly() bool {
-	return false
 }
 
 func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {

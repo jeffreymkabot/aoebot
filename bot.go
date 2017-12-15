@@ -418,11 +418,9 @@ func matchesNameOrAlias(cmd Command, candidate string) bool {
 	if cmd.Name() == candidate {
 		return true
 	}
-	if cmdAlias, ok := cmd.(CommandWithAliases); ok {
-		for _, alias := range cmdAlias.Aliases() {
-			if alias == candidate {
-				return true
-			}
+	for _, alias := range cmd.Aliases() {
+		if alias == candidate {
+			return true
 		}
 	}
 	return false
@@ -443,8 +441,8 @@ func (b *Bot) exec(env *Environment, cmd Command, args []string) {
 	if err != nil {
 		log.Printf("Error in exec %v with %v: %v", cmd.Name(), args, err)
 		b.Write(env.TextChannel.ID, fmt.Sprintf("🤔...\n%v", err), false)
-	} else if cmdAck, ok := cmd.(CommandWithAck); ok && cmdAck.Ack(env) != "" {
-		b.React(env.TextChannel.ID, env.TextMessage.ID, cmdAck.Ack(env))
+	} else if cmd.Ack(env) != "" {
+		b.React(env.TextChannel.ID, env.TextMessage.ID, cmd.Ack(env))
 	}
 }
 

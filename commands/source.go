@@ -6,7 +6,9 @@ import (
 	"github.com/jeffreymkabot/aoebot"
 )
 
-type Source struct{}
+type Source struct {
+	aoebot.BaseCommand
+}
 
 func (s *Source) Name() string {
 	return strings.Fields(s.Usage())[0]
@@ -20,10 +22,6 @@ func (s *Source) Short() string {
 }
 func (s *Source) Long() string {
 	return s.Short() + "."
-}
-
-func (s *Source) IsOwnerOnly() bool {
-	return false
 }
 
 func (s *Source) Run(env *aoebot.Environment, args []string) error {

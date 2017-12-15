@@ -63,7 +63,7 @@ func (ra ReactAction) String() string {
 
 // VoiceAction specifies audio that can be said to a voice channel
 type VoiceAction struct {
-	File  string `bson:"file,omitempty"` 
+	File  string `bson:"file,omitempty"`
 	Alias string `bson:"alias,omitempty"`
 }
 

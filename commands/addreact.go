@@ -38,7 +38,9 @@ func parseReactCmd(arg string, usage string) (emoji string, phrase string, err e
 	return
 }
 
-type AddReact struct{}
+type AddReact struct {
+	aoebot.BaseCommand
+}
 
 func (a *AddReact) Name() string {
 	return strings.Fields(a.Usage())[0]
@@ -66,10 +68,6 @@ func (a *AddReact) Examples() []string {
 		`addreact :cat: on "meow"`,
 		`addreact -regex :wave: on "^hi(,? aoebot)?[!?]?$"`,
 	}
-}
-
-func (a *AddReact) IsOwnerOnly() bool {
-	return false
 }
 
 func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
@@ -132,7 +130,9 @@ func (a *AddReact) Ack(env *aoebot.Environment) string {
 	return "✅"
 }
 
-type DelReact struct{}
+type DelReact struct {
+	aoebot.BaseCommand
+}
 
 func (a *DelReact) Name() string {
 	return strings.Fields(a.Usage())[0]
@@ -157,10 +157,6 @@ func (d *DelReact) Examples() []string {
 		`delreact :cat: on "meow"`,
 		`delreact -regex :wave: on "^hi(,? aoebot)?[!?]?$"`,
 	}
-}
-
-func (a *DelReact) IsOwnerOnly() bool {
-	return false
 }
 
 func (a *DelReact) Run(env *aoebot.Environment, args []string) error {
