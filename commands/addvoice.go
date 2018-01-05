@@ -14,23 +14,7 @@ import (
 
 	"github.com/jeffreymkabot/aoebot"
 	"github.com/jonas747/dca"
-	"gopkg.in/mgo.v2/bson"
 )
-
-type guildPrefs struct {
-	GuildID       string `bson:"guild"`
-	SpamChannelID string `bson:"spam_channel"`
-}
-
-func getGuildPrefs(b *aoebot.Bot, guildID string) (*guildPrefs, error) {
-	coll := b.Driver.DB("aoebot").C("guilds")
-	query := bson.M{
-		"guild": guildID,
-	}
-	prefs := &guildPrefs{}
-	err := coll.Find(query).One(&prefs)
-	return prefs, err
-}
 
 var addvoiceCmdRegexp = regexp.MustCompile(`^on "(\S.*)"$`)
 

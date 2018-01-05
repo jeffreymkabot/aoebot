@@ -94,11 +94,10 @@ func (d *Driver) ConditionAdd(c *Condition, creator string) error {
 			"enabled":   true,
 		},
 	})
-	if err != nil {
-		return err
+	if err == nil {
+		log.Printf("added Condition %#v", info)
 	}
-	log.Printf("added Condition %#v", info)
-	return nil
+	return err
 }
 
 // ConditionDisable disables a condition and any of its duplicates.
@@ -109,11 +108,10 @@ func (d *Driver) ConditionDisable(c *Condition) error {
 			"enabled": false,
 		},
 	})
-	if err != nil {
-		return err
+	if err == nil {
+		log.Printf("disabled Condition %#v", info)
 	}
-	log.Printf("disabled Condition %#v", info)
-	return nil
+	return err
 }
 
 // Channels retrieves all managed channels registered for any guild.

@@ -3,7 +3,6 @@ package commands
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"strings"
 
 	"github.com/jeffreymkabot/aoebot"
