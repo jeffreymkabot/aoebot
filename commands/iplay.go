@@ -59,7 +59,7 @@ func (ip *IPlay) Run(env *aoebot.Environment, args []string) error {
 		env.Bot.Write(env.TextChannel.ID, missingStr, false)
 	}
 	if len(games) == 0 {
-		return nil
+		return errors.New("no games 😦")
 	}
 	// env.Bot.Session.ChannelTyping(env.TextChannel.ID)
 	prefs, err := getGuildPrefs(env.Bot, env.Guild.ID)
@@ -81,7 +81,7 @@ func aliasesToGames(bot *aoebot.Bot, aliases []string) (games []string, missing 
 		if game := getGameByAlias(bot, alias); game != "" {
 			games = append(games, game)
 		} else {
-			missing = append(missing, game)
+			missing = append(missing, alias)
 		}
 	}
 	return
