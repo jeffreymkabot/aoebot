@@ -45,7 +45,7 @@ func setGuildPrefs(b *aoebot.Bot, prefs *guildPrefs) error {
 // empty string for not found
 func getGameByAlias(b *aoebot.Bot, alias string) string {
 	coll := b.Driver.DB("aoebot").C("games")
-	query := bson.M{"alias": alias}
+	query := bson.M{"alias": strings.ToLower(alias)}
 	ga := gameAlias{}
 	coll.Find(query).One(&ga)
 	return ga.Game
@@ -58,6 +58,9 @@ func addGameByAliases(b *aoebot.Bot, game string, aliases ...string) error {
 		return errors.New("invalid game")
 	}
 	game = strings.ToLower(game)
+	if aliasOf := getGameByAlias(b, game); aliasOf != "" {
+		return errors.New(game + " is already a nickname for " + aliasOf)
+	}
 	coll := b.Driver.DB("aoebot").C("games")
 	for _, alias := range aliases {
 		alias = strings.ToLower(alias)

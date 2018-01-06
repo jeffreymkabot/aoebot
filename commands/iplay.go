@@ -55,7 +55,7 @@ func (ip *IPlay) Run(env *aoebot.Environment, args []string) error {
 	}
 	games, missing := aliasesToGames(env.Bot, args)
 	if len(missing) > 0 {
-		missingStr := "I haven't heard of " + strings.Join(missing, ",") + ". Try using `addgame` for new games."
+		missingStr := "I haven't heard of " + strings.Join(missing, ", ") + ". Try using `addgame` for new games."
 		env.Bot.Write(env.TextChannel.ID, missingStr, false)
 	}
 	if len(games) == 0 {
@@ -68,14 +68,19 @@ func (ip *IPlay) Run(env *aoebot.Environment, args []string) error {
 	}
 	roleIDs := getRolesByGame(env.Bot, prefs, games, true)
 	if len(roleIDs) == 0 {
-		return errors.New("couldn't get any guild roles 😦")
+		return errors.New("couldn't get any guild roles for those games 😦")
 	}
 	for _, roleID := range roleIDs {
-		err = env.Bot.Session.GuildMemberRoleAdd(env.Guild.ID, env.Author.ID, roleID)
+		// TODO could continue on error
+		if err := env.Bot.Session.GuildMemberRoleAdd(env.Guild.ID, env.Author.ID, roleID); err != nil {
+			return err
+		}
 	}
-	return err
+	return nil
 }
 
+// get the canonical game names corresponding to a list of candidates
+// no need to match them up
 func aliasesToGames(bot *aoebot.Bot, aliases []string) (games []string, missing []string) {
 	for _, alias := range aliases {
 		if game := getGameByAlias(bot, alias); game != "" {
@@ -93,6 +98,7 @@ func aliasesToGames(bot *aoebot.Bot, aliases []string) (games []string, missing 
 func getRolesByGame(bot *aoebot.Bot, prefs *guildPrefs, games []string, createIfMissing bool) (roleIDs []string) {
 	createdAnyRoles := false
 	for _, game := range games {
+		game = strings.ToLower(game)
 		roleID := prefs.GameRoles[game]
 		// don't check roleID, ok so we can correct entry if GameRoles actually has an empty string
 		// also correct for deleted roles
