@@ -58,7 +58,7 @@ func addGameByAliases(b *aoebot.Bot, game string, aliases ...string) error {
 		return errors.New("invalid game")
 	}
 	game = strings.ToLower(game)
-	if aliasOf := getGameByAlias(b, game); aliasOf != "" {
+	if aliasOf := getGameByAlias(b, game); aliasOf != "" && aliasOf != game {
 		return errors.New(game + " is already a nickname for " + aliasOf)
 	}
 	coll := b.Driver.DB("aoebot").C("games")
