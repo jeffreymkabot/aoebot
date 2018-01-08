@@ -1,10 +1,10 @@
 package aoebot
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,12 +12,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 	dgv "github.com/jeffreymkabot/discordvoice"
 )
-
-// ErrQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit
-var ErrQuit = errors.New("Dispatched a quit action")
-
-// ErrForceQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit immediately
-var ErrForceQuit = errors.New("Dispatched a force quit action")
 
 type Config struct {
 	Prefix                     string
@@ -45,12 +39,10 @@ var DefaultConfig = Config{
 // Bot represents a discord bot
 type Bot struct {
 	mu         sync.Mutex // TODO synchronize state and use of maps
-	kill       chan struct{}
-	killer     error
 	Config     Config
-	log        *log.Logger
 	mongo      string
 	owner      string
+	signalCh   chan<- os.Signal
 	commands   []Command
 	Driver     *Driver
 	Session    *discordgo.Session
@@ -63,13 +55,12 @@ type Bot struct {
 }
 
 // New initializes a bot
-func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err error) {
+func New(token string, mongo string, owner string, signalCh chan<- os.Signal) (b *Bot, err error) {
 	b = &Bot{
-		kill:       make(chan struct{}),
 		Config:     DefaultConfig,
-		log:        log,
 		mongo:      mongo,
 		owner:      owner,
+		signalCh:   signalCh,
 		routines:   make(map[*func()]struct{}),
 		unhandlers: make(map[*func()]struct{}),
 		voiceboxes: make(map[string]*dgv.Player),
@@ -95,39 +86,11 @@ func (b *Bot) WithConfig(cfg Config) {
 	b.Config = cfg
 }
 
-func (b *Bot) AddCommand(c Command) {
+// AddCommand commands are ordered
+func (b *Bot) AddCommand(c ...Command) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.commands = append(b.commands, c)
-}
-
-// modeled after default package context
-func (b *Bot) Die(err error) {
-	if err == nil {
-		panic("calls to Bot.die require a non-nil error")
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.killer != nil {
-		return
-	}
-	b.killer = err
-	close(b.kill)
-}
-
-// Killed returns a channel that is closed when the bot recieves an internal signal to terminate.
-// Clients using the bot *should* respect the signal and stop trying to use it
-// modeled after default package context
-func (b *Bot) Killed() <-chan struct{} {
-	return b.kill
-}
-
-// Killer returns an error message that is non-nil once the bot receives an internal signal to terminate
-// modeled after default package context
-func (b *Bot) Killer() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.killer
+	b.commands = append(b.commands, c...)
 }
 
 // Start initiates a database session and a discord session

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 	"text/tabwriter"
 	"text/template"
@@ -14,22 +15,26 @@ import (
 
 type Command interface {
 	Name() string
+	Aliases() []string
 	Usage() string
 	Short() string
 	Long() string
-	IsOwnerOnly() bool
-	Run(*Environment, []string) error
 	Examples() []string
-	Aliases() []string
+	IsOwnerOnly() bool
 	Ack(env *Environment) string
+	Run(*Environment, []string) error
 }
 
-// BaseCommand is a nop command.
-// Real Commands may embed BaseCommand to use its default function implementations.
+// BaseCommand has default implementations for several components of the command interface.
+// BaseCommand may be embedded for convenience.
 type BaseCommand struct{}
 
 func (b *BaseCommand) Name() string {
 	return ""
+}
+
+func (b *BaseCommand) Aliases() []string {
+	return []string{}
 }
 
 func (b *BaseCommand) Usage() string {
@@ -44,20 +49,12 @@ func (b *BaseCommand) Long() string {
 	return ""
 }
 
-func (b *BaseCommand) IsOwnerOnly() bool {
-	return false
-}
-
-func (b *BaseCommand) Run() error {
-	return nil
-}
-
 func (b *BaseCommand) Examples() []string {
 	return []string{}
 }
 
-func (b *BaseCommand) Aliases() []string {
-	return []string{}
+func (b *BaseCommand) IsOwnerOnly() bool {
+	return false
 }
 
 func (b *BaseCommand) Ack(env *Environment) string {
@@ -73,11 +70,11 @@ func (h *Help) Name() string {
 }
 
 func (h *Help) Usage() string {
-	return `help [-here] [command]`
+	return "help [-here] [command]"
 }
 
 func (h *Help) Short() string {
-	return `Get help about my commands`
+	return "Get help about my commands"
 }
 
 func (h *Help) Long() string {
@@ -223,11 +220,11 @@ func (r *Reconnect) Name() string {
 }
 
 func (r *Reconnect) Usage() string {
-	return `reconnect`
+	return "reconnect"
 }
 
 func (r *Reconnect) Short() string {
-	return `Refresh the voice player for this guild`
+	return "Refresh the voice player for this guild"
 }
 
 func (r *Reconnect) Long() string {
@@ -238,7 +235,7 @@ func (r *Reconnect) Run(env *Environment, args []string) error {
 	if env.Guild == nil {
 		return errors.New("No guild")
 	}
-	env.Bot.Write(env.TextChannel.ID, `Sure thing 🙂`, false)
+	env.Bot.Write(env.TextChannel.ID, "Sure thing 🙂", false)
 	env.Bot.speakTo(env.Guild)
 	return nil
 }
@@ -252,11 +249,11 @@ func (r *Restart) Name() string {
 }
 
 func (r *Restart) Usage() string {
-	return `restart`
+	return "restart"
 }
 
 func (r *Restart) Short() string {
-	return `Restart discord session`
+	return "Restart session"
 }
 
 func (r *Restart) Long() string {
@@ -268,7 +265,7 @@ func (r *Restart) IsOwnerOnly() bool {
 }
 
 func (r *Restart) Run(env *Environment, args []string) error {
-	env.Bot.Write(env.TextChannel.ID, `Okay dad 👀`, false)
+	env.Bot.Write(env.TextChannel.ID, "Okay dad 👀", false)
 	env.Bot.Stop()
 	return env.Bot.Start()
 }
@@ -282,11 +279,11 @@ func (s *Shutdown) Name() string {
 }
 
 func (s *Shutdown) Usage() string {
-	return `shutdown [-hard]`
+	return "shutdown [-hard]"
 }
 
 func (s *Shutdown) Short() string {
-	return `Quit`
+	return "Quit"
 }
 
 func (s *Shutdown) Long() string {
@@ -300,13 +297,20 @@ func (s *Shutdown) IsOwnerOnly() bool {
 func (s *Shutdown) Run(env *Environment, args []string) error {
 	f := flag.NewFlagSet(s.Name(), flag.ContinueOnError)
 	isHard := f.Bool("hard", false, "shutdown without cleanup")
-	err := f.Parse(args)
-	if err != nil && *isHard {
-		env.Bot.Write(env.TextChannel.ID, `💀`, false)
-		env.Bot.Die(ErrForceQuit)
-	} else {
-		env.Bot.Write(env.TextChannel.ID, `Are you sure dad? 😳 💤`, false)
-		env.Bot.Die(ErrQuit)
+	if err := f.Parse(args); err != nil {
+		return err
 	}
-	return nil
+	env.Bot.Write(env.TextChannel.ID, "Are you sure dad? 😳 💤", false)
+	sig := os.Interrupt
+	if *isHard {
+		sig = os.Kill
+	}
+	// signalCh should be buffered
+	// do not wait
+	select {
+	case env.Bot.signalCh <- sig:
+		return nil
+	default:
+	}
+	return errors.New("failed to raise signal: " + sig.String())
 }

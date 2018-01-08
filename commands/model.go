@@ -21,8 +21,8 @@ type gameAlias struct {
 	Alias string
 }
 
-func getGuildPrefs(b *aoebot.Bot, guildID string) (*guildPrefs, error) {
-	coll := b.Driver.DB("aoebot").C("guilds")
+func getGuildPrefs(bot *aoebot.Bot, guildID string) (*guildPrefs, error) {
+	coll := bot.Driver.DB("aoebot").C("guilds")
 	prefs := &guildPrefs{GuildID: guildID}
 	err := coll.Find(prefs).One(&prefs)
 	if err == nil && prefs.GameRoles == nil {
@@ -31,8 +31,8 @@ func getGuildPrefs(b *aoebot.Bot, guildID string) (*guildPrefs, error) {
 	return prefs, err
 }
 
-func setGuildPrefs(b *aoebot.Bot, prefs *guildPrefs) error {
-	coll := b.Driver.DB("aoebot").C("guilds")
+func setGuildPrefs(bot *aoebot.Bot, prefs *guildPrefs) error {
+	coll := bot.Driver.DB("aoebot").C("guilds")
 	query := guildPrefs{GuildID: prefs.GuildID}
 	info, err := coll.Upsert(query, bson.M{"$set": prefs})
 	if err == nil {
@@ -43,8 +43,8 @@ func setGuildPrefs(b *aoebot.Bot, prefs *guildPrefs) error {
 
 // db table has a unique index on alias field
 // empty string for not found
-func getGameByAlias(b *aoebot.Bot, alias string) string {
-	coll := b.Driver.DB("aoebot").C("games")
+func getGameByAlias(bot *aoebot.Bot, alias string) string {
+	coll := bot.Driver.DB("aoebot").C("games")
 	query := bson.M{"alias": strings.ToLower(alias)}
 	ga := gameAlias{}
 	coll.Find(query).One(&ga)
@@ -53,15 +53,15 @@ func getGameByAlias(b *aoebot.Bot, alias string) string {
 
 // register a number of aliases for a given game
 // overwrite an existing entry for an alias for a different game
-func addGameByAliases(b *aoebot.Bot, game string, aliases ...string) error {
+func addGameByAliases(bot *aoebot.Bot, game string, aliases ...string) error {
 	if game == "" {
 		return errors.New("invalid game")
 	}
 	game = strings.ToLower(game)
-	if aliasOf := getGameByAlias(b, game); aliasOf != "" && aliasOf != game {
+	if aliasOf := getGameByAlias(bot, game); aliasOf != "" && aliasOf != game {
 		return errors.New(game + " is already a nickname for " + aliasOf)
 	}
-	coll := b.Driver.DB("aoebot").C("games")
+	coll := bot.Driver.DB("aoebot").C("games")
 	for _, alias := range aliases {
 		alias = strings.ToLower(alias)
 		// silently ignore aliases that start with different letter than game name
@@ -76,8 +76,8 @@ func addGameByAliases(b *aoebot.Bot, game string, aliases ...string) error {
 }
 
 // get all unique games
-func getAllGames(b *aoebot.Bot) (games []string) {
-	coll := b.Driver.DB("aoebot").C("games")
+func getAllGames(bot *aoebot.Bot) (games []string) {
+	coll := bot.Driver.DB("aoebot").C("games")
 	coll.Find(nil).Distinct("game", &games)
 	sort.Strings(games)
 	return
