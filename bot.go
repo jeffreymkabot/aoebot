@@ -1,23 +1,17 @@
 package aoebot
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	dgv "github.com/jeffreymkabot/aoebot/discordvoice"
+	dgv "github.com/jeffreymkabot/discordvoice"
 )
-
-// ErrQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit
-var ErrQuit = errors.New("Dispatched a quit action")
-
-// ErrForceQuit is returned by Bot.Killer when the bot interprets a discord event as a signal to quit immediately
-var ErrForceQuit = errors.New("Dispatched a force quit action")
 
 type Config struct {
 	Prefix                     string
@@ -26,7 +20,7 @@ type Config struct {
 	MaxManagedVoiceDuration    int    `toml:"max_managed_voice_duration"`
 	MaxManagedChannels         int    `toml:"max_managed_channels"`
 	ManagedChannelPollInterval int    `toml:"managed_channel_poll_interval"`
-	Voice                      dgv.VoiceConfig
+	Voice                      dgv.PlayerConfig
 }
 
 var DefaultConfig = Config{
@@ -35,44 +29,41 @@ var DefaultConfig = Config{
 	MaxManagedVoiceDuration:    5,
 	MaxManagedChannels:         5,
 	ManagedChannelPollInterval: 60,
-	Voice: dgv.VoiceConfig{
+	Voice: dgv.PlayerConfig{
 		QueueLength: 100,
 		SendTimeout: 1000,
-		AfkTimeout:  300,
+		IdleTimeout: 300,
 	},
 }
 
 // Bot represents a discord bot
 type Bot struct {
 	mu         sync.Mutex // TODO synchronize state and use of maps
-	kill       chan struct{}
-	killer     error
 	Config     Config
-	log        *log.Logger
 	mongo      string
 	owner      string
+	signalCh   chan<- os.Signal
 	commands   []Command
 	Driver     *Driver
 	Session    *discordgo.Session
 	self       *discordgo.User
-	routines   map[*func()]struct{}     // Set
-	unhandlers map[*func()]struct{}     // Set
-	voiceboxes map[string]*voicebox     // TODO voiceboxes is vulnerable to concurrent read/write
-	occupancy  map[string]string        // TODO occupancy is vulnerable to concurrent read/write
+	routines   map[*func()]struct{}   // Set
+	unhandlers map[*func()]struct{}   // Set
+	voiceboxes map[string]*dgv.Player // TODO voiceboxes is vulnerable to concurrent read/write
+	occupancy  map[string]string      // TODO occupancy is vulnerable to concurrent read/write
 	aesthetic  bool
 }
 
 // New initializes a bot
-func New(token string, mongo string, owner string, log *log.Logger) (b *Bot, err error) {
+func New(token string, mongo string, owner string, signalCh chan<- os.Signal) (b *Bot, err error) {
 	b = &Bot{
-		kill:       make(chan struct{}),
 		Config:     DefaultConfig,
-		log:        log,
 		mongo:      mongo,
 		owner:      owner,
+		signalCh:   signalCh,
 		routines:   make(map[*func()]struct{}),
 		unhandlers: make(map[*func()]struct{}),
-		voiceboxes: make(map[string]*voicebox),
+		voiceboxes: make(map[string]*dgv.Player),
 		occupancy:  make(map[string]string),
 	}
 	b.Session, err = discordgo.New("Bot " + token)
@@ -95,39 +86,11 @@ func (b *Bot) WithConfig(cfg Config) {
 	b.Config = cfg
 }
 
-func (b *Bot) AddCommand(c Command) {
+// AddCommand commands are ordered
+func (b *Bot) AddCommand(c ...Command) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.commands = append(b.commands, c)
-}
-
-// modeled after default package context
-func (b *Bot) Die(err error) {
-	if err == nil {
-		panic("calls to Bot.die require a non-nil error")
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.killer != nil {
-		return
-	}
-	b.killer = err
-	close(b.kill)
-}
-
-// Killed returns a channel that is closed when the bot recieves an internal signal to terminate.
-// Clients using the bot *should* respect the signal and stop trying to use it
-// modeled after default package context
-func (b *Bot) Killed() <-chan struct{} {
-	return b.kill
-}
-
-// Killer returns an error message that is non-nil once the bot receives an internal signal to terminate
-// modeled after default package context
-func (b *Bot) Killer() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.killer
+	b.commands = append(b.commands, c...)
 }
 
 // Start initiates a database session and a discord session
@@ -172,15 +135,15 @@ func (b *Bot) Stop() {
 
 	log.Printf("Closing botroutines...")
 	for f := range b.routines {
-		if f != nil{
+		if f != nil {
 			(*f)()
 		}
 		delete(b.routines, f)
 	}
 
 	log.Printf("Closing voiceboxes...")
-	for k, vb := range b.voiceboxes {
-		vb.close()
+	for k, player := range b.voiceboxes {
+		player.Quit()
 		delete(b.voiceboxes, k)
 	}
 
@@ -222,16 +185,8 @@ func (b *Bot) React(channelID string, messageID string, emoji string) (unreact f
 // Say some audio frames to a channel in a guild
 // Say drops the payload when the voicebox for that guild queue is full
 func (b *Bot) Say(guildID string, channelID string, reader io.Reader) (err error) {
-	if vb, ok := b.voiceboxes[guildID]; ok && vb != nil && vb.queue != nil {
-		vp := &dgv.Payload{
-			Reader:    reader,
-			ChannelID: channelID,
-		}
-		select {
-		case vb.queue <- vp:
-		default:
-			err = fmt.Errorf("Full voice queue in guild %v", guildID)
-		}
+	if player, ok := b.voiceboxes[guildID]; ok && player != nil {
+		err = player.Enqueue(channelID, "", dgv.PreEncoded(reader))
 	} else {
 		err = fmt.Errorf("No voicebox registered for guild %v", guildID)
 	}
@@ -397,43 +352,46 @@ func channelManager(ch channel, delete func(ch channel), isEmpty func(ch channel
 	}
 }
 
-type voicebox struct {
-	queue chan<- *dgv.Payload
-	close func()
-}
-
 // speakTo opens the conversation with a discord guild
 func (b *Bot) speakTo(g *discordgo.Guild) {
-	vb, ok := b.voiceboxes[g.ID]
+	player, ok := b.voiceboxes[g.ID]
 	if ok {
-		vb.close()
+		player.Quit()
 	}
 	ql := dgv.QueueLength(b.Config.Voice.QueueLength)
 	st := dgv.SendTimeout(b.Config.Voice.SendTimeout)
-	at := dgv.AfkTimeout(b.Config.Voice.AfkTimeout)
-	c, f := dgv.Connect(b.Session, g, ql, st, at)
-	b.voiceboxes[g.ID] = &voicebox{
-		queue: c,
-		close: f,
-	}
+	at := dgv.IdleTimeout(b.Config.Voice.IdleTimeout)
+	b.voiceboxes[g.ID] = dgv.Connect(b.Session, g.ID, g.AfkChannelID, ql, st, at)
 }
 
 func (b *Bot) command(args []string) (Command, []string) {
 	if len(args) > 0 {
-		cmd := strings.ToLower(args[0])
+		candidate := strings.ToLower(args[0])
 		args := args[1:]
-		for _, c := range b.commands {
-			if c.Name() == cmd {
-				return c, args
+		for _, cmd := range b.commands {
+			if matchesNameOrAlias(cmd, candidate) {
+				return cmd, args
 			}
 		}
 	}
 	return &Help{}, []string{}
 }
 
+func matchesNameOrAlias(cmd Command, candidate string) bool {
+	if cmd.Name() == candidate {
+		return true
+	}
+	for _, alias := range cmd.Aliases() {
+		if alias == candidate {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *Bot) exec(env *Environment, cmd Command, args []string) {
 	if cmd.IsOwnerOnly() && env.Author.ID != b.owner {
-		_ = b.Write(env.TextChannel.ID, "Sorry, only dad can use that one 🙃", false)
+		b.Write(env.TextChannel.ID, "I'm sorry, Dave.  I'm afraid I can't do that.  🔴", false)
 		return
 	}
 	defer func() {
@@ -445,8 +403,9 @@ func (b *Bot) exec(env *Environment, cmd Command, args []string) {
 	err := cmd.Run(env, args)
 	if err != nil {
 		log.Printf("Error in exec %v with %v: %v", cmd.Name(), args, err)
-		_ = b.Write(env.TextChannel.ID, fmt.Sprintf("🤔...\n%v", err), false)
-		return
+		b.Write(env.TextChannel.ID, fmt.Sprintf("🤔...\n%v", err), false)
+	} else if cmd.Ack(env) != "" {
+		b.React(env.TextChannel.ID, env.TextMessage.ID, cmd.Ack(env))
 	}
 }
 

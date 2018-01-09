@@ -2,7 +2,6 @@ package aoebot
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"os"
 )
@@ -18,7 +17,7 @@ type ActionType string
 
 const (
 	write ActionType = "write"
-	voice ActionType = "say"
+	voice ActionType = "voice"
 	react ActionType = "react"
 )
 
@@ -38,9 +37,9 @@ func (wa WriteAction) kind() ActionType {
 
 func (wa WriteAction) String() string {
 	if wa.TTS {
-		return fmt.Sprintf("/tts %v", wa.Content)
+		return "/tts" + wa.Content
 	}
-	return fmt.Sprintf("%v", wa.Content)
+	return wa.Content
 }
 
 // ReactAction specifies an emoji that can be used to react to a message
@@ -58,17 +57,16 @@ func (ra ReactAction) kind() ActionType {
 }
 
 func (ra ReactAction) String() string {
-	return fmt.Sprintf("%s", ra.Emoji)
+	return ra.Emoji
 }
 
 // VoiceAction specifies audio that can be said to a voice channel
 type VoiceAction struct {
-	File   string
-	buffer [][]byte
+	File  string `bson:"file,omitempty"`
+	Alias string `bson:"alias,omitempty"`
 }
 
 func (va VoiceAction) Perform(env *Environment) error {
-	// TODO could cache result of sa.load
 	r, err := va.load()
 	if err != nil {
 		return err
@@ -84,10 +82,10 @@ func (va VoiceAction) load() (io.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 
 	buf := bytes.NewBuffer([]byte{})
 	_, err = buf.ReadFrom(file)
+	file.Close()
 	return buf, err
 }
 
@@ -96,5 +94,8 @@ func (va VoiceAction) kind() ActionType {
 }
 
 func (va VoiceAction) String() string {
-	return fmt.Sprintf("%v", va.File)
+	if va.Alias != "" {
+		return va.Alias
+	}
+	return va.File
 }

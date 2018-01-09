@@ -11,9 +11,36 @@ import (
 	"github.com/jeffreymkabot/aoebot"
 )
 
-var reactCmdRegex = regexp.MustCompile(`^(?:<:(\S+:\S+)>|(\S.*)) on "(\S.*)"$`)
+// emojis have a special text representation for guild custom emojis
+var reactCmdRegexp = regexp.MustCompile(`^(?:<:(\S+:\S+)>|(\S.*)) on "(\S.*)"$`)
 
-type AddReact struct{}
+func parseReactCmd(arg string, usage string) (emoji string, phrase string, err error) {
+	submatches := reactCmdRegexp.FindStringSubmatch(arg)
+	if submatches == nil {
+		err = errors.New(usage)
+		return
+	}
+
+	if submatches[1] != "" {
+		emoji = submatches[1]
+	} else if submatches[2] != "" {
+		emoji = submatches[2]
+	} else {
+		err = errors.New("Couldn't parse emoji")
+		return
+	}
+
+	if submatches[3] == "" {
+		err = errors.New("Couldn't parse phrase")
+		return
+	}
+	phrase = strings.ToLower(submatches[3])
+	return
+}
+
+type AddReact struct {
+	aoebot.BaseCommand
+}
 
 func (a *AddReact) Name() string {
 	return strings.Fields(a.Usage())[0]
@@ -43,10 +70,6 @@ func (a *AddReact) Examples() []string {
 	}
 }
 
-func (a *AddReact) IsOwnerOnly() bool {
-	return false
-}
-
 func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
 	f := flag.NewFlagSet(a.Name(), flag.ContinueOnError)
 	isRegex := f.Bool("regex", false, "parse phrase as a regular expression")
@@ -55,31 +78,16 @@ func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
 		return err
 	}
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild?
+		return errors.New("No guild")
 	}
 	if len(env.Bot.Driver.ConditionsGuild(env.Guild.ID)) >= env.Bot.Config.MaxManagedConditions {
 		return errors.New("I'm not allowed make any more memes in this guild")
 	}
 
 	argString := strings.Join(f.Args(), " ")
-	if !reactCmdRegex.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"addreact"})
-	}
-	submatches := reactCmdRegex.FindStringSubmatch(argString)
-
-	var emoji string
-	if len(submatches[1]) > 0 {
-		emoji = submatches[1]
-	} else {
-		emoji = submatches[2]
-	}
-	if len(emoji) == 0 {
-		return errors.New("Couldn't parse emoji")
-	}
-
-	phrase := strings.ToLower(submatches[3])
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	emoji, phrase, err := parseReactCmd(argString, a.Usage())
+	if err != nil {
+		return err
 	}
 
 	log.Printf("Trying emoji %v\n", emoji)
@@ -118,7 +126,13 @@ func (a *AddReact) Run(env *aoebot.Environment, args []string) error {
 	return nil
 }
 
-type DelReact struct{}
+func (a *AddReact) Ack(env *aoebot.Environment) string {
+	return "✅"
+}
+
+type DelReact struct {
+	aoebot.BaseCommand
+}
 
 func (a *DelReact) Name() string {
 	return strings.Fields(a.Usage())[0]
@@ -145,10 +159,6 @@ func (d *DelReact) Examples() []string {
 	}
 }
 
-func (a *DelReact) IsOwnerOnly() bool {
-	return false
-}
-
 func (a *DelReact) Run(env *aoebot.Environment, args []string) error {
 	f := flag.NewFlagSet(a.Name(), flag.ContinueOnError)
 	isRegex := f.Bool("regex", false, "parse phrase as a regular expression")
@@ -157,28 +167,13 @@ func (a *DelReact) Run(env *aoebot.Environment, args []string) error {
 		return err
 	}
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild?
+		return errors.New("No guild")
 	}
 
 	argString := strings.Join(f.Args(), " ")
-	if !reactCmdRegex.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"delreact"})
-	}
-	submatches := reactCmdRegex.FindStringSubmatch(argString)
-
-	var emoji string
-	if len(submatches[1]) > 0 {
-		emoji = submatches[1]
-	} else {
-		emoji = submatches[2]
-	}
-	if len(emoji) == 0 {
-		return errors.New("Coudln't parse emoji")
-	}
-
-	phrase := submatches[3]
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	emoji, phrase, err := parseReactCmd(argString, a.Usage())
+	if err != nil {
+		return err
 	}
 
 	cond := &aoebot.Condition{
@@ -198,10 +193,9 @@ func (a *DelReact) Run(env *aoebot.Environment, args []string) error {
 		cond.Phrase = strings.ToLower(phrase)
 	}
 
-	err = env.Bot.Driver.ConditionDelete(cond)
-	if err != nil {
-		return err
-	}
-	_ = env.Bot.Write(env.TextChannel.ID, `🗑️`, false)
-	return nil
+	return env.Bot.Driver.ConditionDisable(cond)
+}
+
+func (a *DelReact) Ack(env *aoebot.Environment) string {
+	return "🗑"
 }

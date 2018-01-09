@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -17,7 +18,24 @@ import (
 
 var addvoiceCmdRegexp = regexp.MustCompile(`^on "(\S.*)"$`)
 
-type AddVoice struct{}
+func parseAddVoiceCmd(arg string, usage string) (phrase string, err error) {
+	submatches := addvoiceCmdRegexp.FindStringSubmatch(arg)
+	if submatches == nil {
+		err = errors.New(usage)
+		return
+	}
+
+	if submatches[1] == "" {
+		err = errors.New("Couldn't parse phrase")
+		return
+	}
+	phrase = strings.ToLower(submatches[1])
+	return
+}
+
+type AddVoice struct {
+	aoebot.BaseCommand
+}
 
 func (a *AddVoice) Name() string {
 	return strings.Fields(a.Usage())[0]
@@ -46,13 +64,8 @@ func (a *AddVoice) Examples() []string {
 	}
 }
 
-func (a *AddVoice) IsOwnerOnly() bool {
-	return false
-}
-
 func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 	f := flag.NewFlagSet(a.Name(), flag.ContinueOnError)
-	vol := f.Int("vol", dca.StdEncodeOptions.Volume, "volume")
 	filters := f.String("af", dca.StdEncodeOptions.AudioFilter, "ffmpeg filters")
 	err := f.Parse(args)
 	if err != nil {
@@ -60,7 +73,7 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 	}
 
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild?
+		return errors.New("No guild")
 	}
 	if len(env.Bot.Driver.ConditionsGuild(env.Guild.ID)) >= env.Bot.Config.MaxManagedConditions {
 		return errors.New("I'm not allowed make any more memes in this guild")
@@ -70,58 +83,63 @@ func (a *AddVoice) Run(env *aoebot.Environment, args []string) error {
 	}
 
 	argString := strings.Join(f.Args(), " ")
-	if !addvoiceCmdRegexp.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"addvoice"})
-	}
-	submatches := addvoiceCmdRegexp.FindStringSubmatch(argString)
-
-	phrase := strings.ToLower(submatches[1])
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	phrase, err := parseAddVoiceCmd(argString, a.Usage())
+	if err != nil {
+		return err
 	}
 
 	url := env.TextMessage.Attachments[0].URL
 	filename := env.TextMessage.Attachments[0].Filename
 	duration := time.Duration(env.Bot.Config.MaxManagedVoiceDuration) * time.Second
-	file, err := dcaFromURL(url, filename, duration, withVolume(*vol), withFilters(*filters))
+	file, err := dcaFromURL(url, filename, duration, withFilters(*filters))
 	if err != nil {
 		return err
 	}
+
+	// if the guild has a spam text channel set up, restrict the voice condition to act only on
+	// phrases written to the spam channel
+	textChannelID := ""
+	if prefs, err := getGuildPrefs(env.Bot, env.Guild.ID); err == nil {
+		log.Printf("Using saved guild prefs %#v", prefs)
+		textChannelID = prefs.SpamChannelID
+	}
+
 	cond := &aoebot.Condition{
 		EnvironmentType: aoebot.Message,
 		GuildID:         env.Guild.ID,
 		Phrase:          phrase,
+		TextChannelID:   textChannelID,
 		Action: aoebot.NewActionEnvelope(&aoebot.VoiceAction{
-			File: file.Name(),
+			File:  file.Name(),
+			Alias: filename,
 		}),
 	}
 
-	err = env.Bot.Driver.ConditionAdd(cond, env.Author.String())
-	if err != nil {
-		return err
-	}
-	_ = env.Bot.Write(env.TextChannel.ID, `+`, false)
-	return nil
+	return env.Bot.Driver.ConditionAdd(cond, env.Author.String())
+}
+
+func (a *AddVoice) Ack(env *aoebot.Environment) string {
+	return "✅"
 }
 
 type encodeOption func(*dca.EncodeOptions)
 
-func withVolume(vol int) encodeOption {
-	return func(enc *dca.EncodeOptions) {
-		enc.Volume = vol
-	}
-}
-
 func withFilters(filters string) encodeOption {
 	return func(enc *dca.EncodeOptions) {
-		enc.AudioFilter = filters
+		if strings.TrimSpace(filters) != "" {
+			enc.AudioFilter = filters
+		}
 	}
 }
 
-func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...encodeOption) (f *os.File, err error) {
+const limiterFilter = "loudnorm=i=-29"
+
+const voiceFilePathTmpl = "media/audio/%s.dca"
+
+func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...encodeOption) (*os.File, error) {
 	resp, err := http.Get(url)
 	if err != nil {
-		return
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -131,7 +149,6 @@ func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...
 		FrameRate:        48000,
 		FrameDuration:    20,
 		Bitrate:          64,
-		RawOutput:        true,
 		Application:      dca.AudioApplicationAudio,
 		CompressionLevel: 10,
 		PacketLoss:       1,
@@ -141,43 +158,71 @@ func dcaFromURL(url string, fname string, maxDuration time.Duration, options ...
 	for _, opt := range options {
 		opt(encodeOptions)
 	}
+	// apply a limiter at the end of the signal chain
+	if encodeOptions.AudioFilter != "" {
+		encodeOptions.AudioFilter += ", "
+	}
+	encodeOptions.AudioFilter += limiterFilter
 
 	encoder, err := dca.EncodeMem(resp.Body, encodeOptions)
 	if err != nil {
-		return
+		return nil, err
 	}
 	defer encoder.Cleanup()
 
-	f, err = os.Create(fmt.Sprintf("./media/audio/%s.dca", fname))
+	f, err := os.Create(fmt.Sprintf(voiceFilePathTmpl, fname))
 	if err != nil {
-		return
+		return nil, err
 	}
 	defer f.Close()
 
 	frameDuration := encoder.FrameDuration()
-	fileDuration := time.Duration(0)
 
 	// count frames to make sure we do not exceed the maximum allowed file size
 	var frame []byte
-	for ; fileDuration < maxDuration; fileDuration += frameDuration {
+	for fileDuration := time.Duration(0); fileDuration < maxDuration; fileDuration += frameDuration {
 		frame, err = encoder.ReadFrame()
 		if err != nil {
 			if err == io.EOF {
-				err = nil
+				return f, nil
 			}
-			return
+			return nil, err
 		}
+
 		_, err = f.Write(frame)
 		if err != nil {
-			return
+			return nil, err
 		}
 	}
-	return
+	return f, nil
 }
 
 var delvoiceCmdRegexp = regexp.MustCompile(`^"(\S.*)" on "(\S.*)"$`)
 
-type DelVoice struct{}
+func parseDelVoiceCmd(arg string, usage string) (filename string, phrase string, err error) {
+	submatches := delvoiceCmdRegexp.FindStringSubmatch(arg)
+	if submatches == nil {
+		err = errors.New(usage)
+		return
+	}
+
+	if submatches[1] == "" {
+		err = errors.New("Couldn't parse filename")
+		return
+	}
+	filename = submatches[1]
+
+	if submatches[2] == "" {
+		err = errors.New("Couldn't parse phrase")
+		return
+	}
+	phrase = strings.ToLower(submatches[2])
+	return
+}
+
+type DelVoice struct {
+	aoebot.BaseCommand
+}
 
 func (d *DelVoice) Name() string {
 	return strings.Fields(d.Usage())[0]
@@ -193,44 +238,26 @@ func (d *DelVoice) Short() string {
 
 func (d *DelVoice) Long() string {
 	return `Remove an automatic audio response created by addvoice.
-Files uploaded with addvoice are saved to a relative path and with a new file extension.
-The relative path and new file extension can be discovered with the getmemes command.
 Suppose there is a response created using the file "greenhillzone.wav" on the phrase "gotta go fast".
-The "getmemes" command will show:
-say ./media/audio/greenhillzone.wav.dca on "gotta go fast"
 This response can be deleted with:
-delvoice ./media/audio/greenhillzone.wav.dca on "gotta go fast"`
+delvoice "greenhillzone.wav" on "gotta go fast"`
 }
 
 func (d *DelVoice) Examples() []string {
 	return []string{
-		`delvoice "./media/audiogreenhillzone.dca" on "gotta go fast"`,
+		`delvoice "greenhillzone.wav" on "gotta go fast"`,
 	}
-}
-
-func (d *DelVoice) IsOwnerOnly() bool {
-	return false
 }
 
 func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild
+		return errors.New("No guild")
 	}
 
 	argString := strings.Join(args, " ")
-	if !delvoiceCmdRegexp.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"delvoice"})
-	}
-	submatches := delvoiceCmdRegexp.FindStringSubmatch(argString)
-
-	filename := submatches[1]
-	if len(filename) == 0 {
-		return errors.New("Coudln't parse filename")
-	}
-
-	phrase := strings.ToLower(submatches[2])
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	filename, phrase, err := parseDelVoiceCmd(argString, d.Usage())
+	if err != nil {
+		return err
 	}
 
 	cond := &aoebot.Condition{
@@ -238,14 +265,15 @@ func (d *DelVoice) Run(env *aoebot.Environment, args []string) error {
 		GuildID:         env.Guild.ID,
 		Phrase:          phrase,
 		Action: aoebot.NewActionEnvelope(&aoebot.VoiceAction{
-			File: filename,
+			// TODO why does it need both ??
+			Alias: filename,
+			File:  fmt.Sprintf(voiceFilePathTmpl, filename),
 		}),
 	}
 
-	err := env.Bot.Driver.ConditionDelete(cond)
-	if err != nil {
-		return err
-	}
-	_ = env.Bot.Write(env.TextChannel.ID, `🗑️`, false)
-	return nil
+	return env.Bot.Driver.ConditionDisable(cond)
+}
+
+func (a *DelVoice) Ack(env *aoebot.Environment) string {
+	return "🗑"
 }

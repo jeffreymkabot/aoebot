@@ -10,10 +10,16 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-type Aoe2 struct{}
+type Aoe2 struct {
+	aoebot.BaseCommand
+}
 
 func (a *Aoe2) Name() string {
 	return strings.Fields(a.Usage())[0]
+}
+
+func (a *Aoe2) Aliases() []string {
+	return []string{"aoe"}
 }
 
 func (a *Aoe2) Usage() string {
@@ -26,10 +32,6 @@ func (a *Aoe2) Short() string {
 
 func (a *Aoe2) Long() string {
 	return a.Short() + "."
-}
-
-func (a *Aoe2) IsOwnerOnly() bool {
-	return false
 }
 
 func (a *Aoe2) Run(env *aoebot.Environment, args []string) error {

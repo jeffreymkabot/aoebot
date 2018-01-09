@@ -6,7 +6,9 @@ import (
 	"github.com/jeffreymkabot/aoebot"
 )
 
-type TestAction struct{}
+type TestAction struct {
+	aoebot.BaseCommand
+}
 
 func (t *TestAction) Name() string {
 	return strings.Fields(t.Usage())[0]
@@ -22,10 +24,6 @@ func (t *TestAction) Short() string {
 
 func (t *TestAction) Long() string {
 	return t.Short() + "."
-}
-
-func (t *TestAction) IsOwnerOnly() bool {
-	return false
 }
 
 func (t *TestAction) Run(env *aoebot.Environment, args []string) error {

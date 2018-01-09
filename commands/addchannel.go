@@ -3,13 +3,14 @@ package commands
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"strings"
 
 	"github.com/jeffreymkabot/aoebot"
 )
 
-type AddChannel struct{}
+type AddChannel struct {
+	aoebot.BaseCommand
+}
 
 func (ac *AddChannel) Name() string {
 	return strings.Fields(ac.Usage())[0]
@@ -41,10 +42,6 @@ func (a *AddChannel) Examples() []string {
 	}
 }
 
-func (ac *AddChannel) IsOwnerOnly() bool {
-	return false
-}
-
 func (ac *AddChannel) Run(env *aoebot.Environment, args []string) error {
 	f := flag.NewFlagSet("addchannel", flag.ContinueOnError)
 	isOpen := f.Bool("openmic", false, "permit voice activity")
@@ -61,10 +58,14 @@ func (ac *AddChannel) Run(env *aoebot.Environment, args []string) error {
 		return errors.New("I'm not allowed to make any more channels in this guild 😦")
 	}
 
-	chName := fmt.Sprintf("@!%s", env.Author)
+	chName := "@!" + env.Author.String()
 	if *isOpen {
 		chName = "open" + chName
 	}
 
 	return env.Bot.AddManagedVoiceChannel(env.Guild.ID, chName, aoebot.ChannelOpenMic(*isOpen), aoebot.ChannelUsers(*userLimit))
+}
+
+func (ac *AddChannel) Ack(env *aoebot.Environment) string {
+	return "✅"
 }

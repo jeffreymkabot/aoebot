@@ -1,7 +1,6 @@
 package aoebot
 
 import (
-	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -22,7 +21,7 @@ func (b *Bot) onReady() func(s *discordgo.Session, r *discordgo.Ready) {
 		b.addHandler(b.onGuildCreate())
 		b.addHandler(b.onMessageCreate())
 		b.addHandler(b.onVoiceStateUpdate())
-		b.Session.UpdateStatus(0, fmt.Sprintf("%s %s", b.Config.Prefix, (&Help{}).Name()))
+		b.Session.UpdateStatus(0, b.Config.Prefix+" "+(&Help{}).Name())
 	}
 }
 
@@ -79,7 +78,7 @@ func (b *Bot) onMessageCreate() func(*discordgo.Session, *discordgo.MessageCreat
 			log.Printf("Error resolving environment of new message: %v", err)
 			return
 		}
-		log.Printf("Saw a new message (%v) by %s in channel %v in guild %v", env.TextMessage.Content, env.Author, env.TextChannel.Name, env.Guild.Name)
+		log.Printf("Saw a new message (%v) by %s in channel %v", env.TextMessage.Content, env.Author, env.TextChannel.Name)
 		if env.Author.Bot || b.IsOwnEnvironment(env) {
 			return
 		}

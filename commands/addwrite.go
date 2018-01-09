@@ -8,9 +8,32 @@ import (
 	"github.com/jeffreymkabot/aoebot"
 )
 
-var writeCmdRegex = regexp.MustCompile(`^"(\S.*)" on "(\S.*)"$`)
+var writeCmdRegexp = regexp.MustCompile(`^"(\S.*)" on "(\S.*)"$`)
 
-type AddWrite struct{}
+func parseWriteCmd(arg string, usage string) (response string, phrase string, err error) {
+	submatches := writeCmdRegexp.FindStringSubmatch(arg)
+	if submatches == nil {
+		err = errors.New(usage)
+		return
+	}
+
+	if submatches[1] == "" {
+		err = errors.New("Couldn't parse response")
+		return
+	}
+	response = submatches[1]
+
+	if submatches[2] == "" {
+		err = errors.New("Couldn't parse phrase")
+		return
+	}
+	phrase = strings.ToLower(submatches[2])
+	return
+}
+
+type AddWrite struct {
+	aoebot.BaseCommand
+}
 
 func (a *AddWrite) Name() string {
 	return strings.Fields(a.Usage())[0]
@@ -37,32 +60,18 @@ func (a *AddWrite) Examples() []string {
 	}
 }
 
-func (a *AddWrite) IsOwnerOnly() bool {
-	return false
-}
-
 func (a *AddWrite) Run(env *aoebot.Environment, args []string) error {
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild?
+		return errors.New("No guild")
 	}
 	if len(env.Bot.Driver.ConditionsGuild(env.Guild.ID)) >= env.Bot.Config.MaxManagedConditions {
 		return errors.New("I'm not allowed make any more memes in this guild")
 	}
 
 	argString := strings.Join(args, " ")
-	if !writeCmdRegex.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"addwrite"})
-	}
-	submatches := writeCmdRegex.FindStringSubmatch(argString)
-
-	response := submatches[1]
-	if len(response) == 0 {
-		return errors.New("Couldn't parse response")
-	}
-
-	phrase := strings.ToLower(submatches[2])
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	response, phrase, err := parseWriteCmd(argString, a.Usage())
+	if err != nil {
+		return err
 	}
 
 	cond := &aoebot.Condition{
@@ -74,15 +83,16 @@ func (a *AddWrite) Run(env *aoebot.Environment, args []string) error {
 		}),
 	}
 
-	err := env.Bot.Driver.ConditionAdd(cond, env.Author.String())
-	if err != nil {
-		return err
-	}
-	_ = env.Bot.Write(env.TextChannel.ID, `+`, false)
-	return nil
+	return env.Bot.Driver.ConditionAdd(cond, env.Author.String())
 }
 
-type DelWrite struct{}
+func (a *AddWrite) Ack(env *aoebot.Environment) string {
+	return "✅"
+}
+
+type DelWrite struct {
+	aoebot.BaseCommand
+}
 
 func (d *DelWrite) Name() string {
 	return strings.Fields(d.Usage())[0]
@@ -106,29 +116,15 @@ func (d *DelWrite) Examples() []string {
 	}
 }
 
-func (d *DelWrite) IsOwnerOnly() bool {
-	return false
-}
-
 func (d *DelWrite) Run(env *aoebot.Environment, args []string) error {
 	if env.Guild == nil {
-		return errors.New("No guild") // ErrNoGuild?
+		return errors.New("No guild")
 	}
 
 	argString := strings.Join(args, " ")
-	if !writeCmdRegex.MatchString(argString) {
-		return (&aoebot.Help{}).Run(env, []string{"delwrite"})
-	}
-	submatches := writeCmdRegex.FindStringSubmatch(argString)
-
-	response := submatches[1]
-	if len(response) == 0 {
-		return errors.New("Couldn't parse response")
-	}
-
-	phrase := strings.ToLower(submatches[2])
-	if len(phrase) == 0 {
-		return errors.New("Couldn't parse phrase")
+	response, phrase, err := parseWriteCmd(argString, d.Usage())
+	if err != nil {
+		return err
 	}
 
 	cond := &aoebot.Condition{
@@ -140,10 +136,9 @@ func (d *DelWrite) Run(env *aoebot.Environment, args []string) error {
 		}),
 	}
 
-	err := env.Bot.Driver.ConditionDelete(cond)
-	if err != nil {
-		return err
-	}
-	_ = env.Bot.Write(env.TextChannel.ID, `🗑️`, false)
-	return nil
+	return env.Bot.Driver.ConditionDisable(cond)
+}
+
+func (a *DelWrite) Ack(env *aoebot.Environment) string {
+	return "🗑"
 }
