@@ -11,6 +11,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	dgv "github.com/jeffreymkabot/discordvoice"
+	"github.com/pkg/errors"
 )
 
 type Config struct {
@@ -182,26 +183,29 @@ func (b *Bot) React(channelID string, messageID string, emoji string) (unreact f
 	return
 }
 
-// Say some audio frames to a channel in a guild
-// Say drops the payload when the voicebox for that guild queue is full
-func (b *Bot) Say(guildID string, channelID string, reader io.Reader) (err error) {
-	if player, ok := b.voiceboxes[guildID]; ok && player != nil {
-		err = player.Enqueue(channelID, "", dgv.PreEncoded(reader))
-	} else {
-		err = fmt.Errorf("No voicebox registered for guild %v", guildID)
+func onVoiceEnd(_ time.Duration, err error) {
+	if err != nil && errors.Cause(err) != io.EOF {
+		log.Printf("voice error: %v", err)
 	}
-	return
+}
+
+// Voice some audio frames to a channel in a guild
+// Voice drops the payload when the voicebox for that guild queue is full
+func (b *Bot) Voice(guildID string, channelID string, open dgv.SongOpener) (err error) {
+	if player, ok := b.voiceboxes[guildID]; ok && player != nil {
+		return player.Enqueue(channelID, "", open, dgv.PreEncoded(), dgv.OnEnd(onVoiceEnd))
+	}
+	return fmt.Errorf("No voicebox registered for guild %v", guildID)
 }
 
 // helper func
-func (b *Bot) sayToUserInGuild(guild *discordgo.Guild, userID string, reader io.Reader) (err error) {
+func (b *Bot) voiceToUserInGuild(guild *discordgo.Guild, userID string, open dgv.SongOpener) (err error) {
 	for _, vs := range guild.VoiceStates {
 		if vs.UserID == userID {
-			return b.Say(guild.ID, vs.ChannelID, reader)
+			return b.Voice(guild.ID, vs.ChannelID, open)
 		}
 	}
-	err = fmt.Errorf("Couldn't find user %v in a voice channel in guild %v", userID, guild.ID)
-	return
+	return fmt.Errorf("Couldn't find user %v in a voice channel in guild %v", userID, guild.ID)
 }
 
 // Add an event handler to the discord session and retain a reference to the handler remover

@@ -1,7 +1,6 @@
 package aoebot
 
 import (
-	"bytes"
 	"io"
 	"os"
 )
@@ -67,26 +66,13 @@ type VoiceAction struct {
 }
 
 func (va VoiceAction) Perform(env *Environment) error {
-	r, err := va.load()
-	if err != nil {
-		return err
+	open := func() (io.ReadCloser, error) {
+		return os.Open(va.File)
 	}
 	if env.VoiceChannel != nil {
-		return env.Bot.Say(env.Guild.ID, env.VoiceChannel.ID, r)
+		return env.Bot.Voice(env.Guild.ID, env.VoiceChannel.ID, open)
 	}
-	return env.Bot.sayToUserInGuild(env.Guild, env.Author.ID, r)
-}
-
-func (va VoiceAction) load() (io.Reader, error) {
-	file, err := os.Open(va.File)
-	if err != nil {
-		return nil, err
-	}
-
-	buf := bytes.NewBuffer([]byte{})
-	_, err = buf.ReadFrom(file)
-	file.Close()
-	return buf, err
+	return env.Bot.voiceToUserInGuild(env.Guild, env.Author.ID, open)
 }
 
 func (va VoiceAction) kind() ActionType {
